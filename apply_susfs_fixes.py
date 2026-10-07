@@ -45,7 +45,7 @@ def main():
     if os.path.exists(namespace_c):
         with open(namespace_c, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
-        if "susfs_mnt_id_ida" not in content:
+        if "DEFINE_IDA(susfs_mnt_id_ida)" not in content:
             target = '#include "internal.h"'
             inject = '''#include "internal.h"
 
@@ -63,6 +63,27 @@ static DEFINE_IDA(susfs_mnt_group_ida);
 #define CL_COPY_MNT_NS BIT(25)
 #endif'''
             patch_file(namespace_c, target, inject)
+
+    # 4. kernel/sys.c
+    sys_c = os.path.join(kernel_dir, "kernel", "sys.c")
+    if os.path.exists(sys_c):
+        with open(sys_c, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        if "susfs_spoof_uname" not in content:
+            target = "SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)"
+            inject = '''#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+extern void susfs_spoof_uname(struct new_utsname* tmp);
+#endif
+SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)'''
+            patch_file(sys_c, target, inject)
+
+            # Inject hook inside newuname
+            target_hook = "up_read(&uts_sem);"
+            inject_hook = '''#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+	susfs_spoof_uname(&tmp);
+#endif
+	up_read(&uts_sem);'''
+            patch_file(sys_c, target_hook, inject_hook)
 
     print("[*] All SuSFS fixes applied!")
 
