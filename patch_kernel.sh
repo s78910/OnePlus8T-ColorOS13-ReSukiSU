@@ -19,21 +19,9 @@ echo "Applying 50_add_susfs_in_kernel-4.19.patch..."
 patch -p1 --forward --ignore-whitespace < susfs_src/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
 grep -q "CONFIG_KSU_SUSFS" fs/Makefile || echo "obj-\$(CONFIG_KSU_SUSFS) += susfs.o" >> fs/Makefile
 
-echo "Applying SuSFS compatibility fixes..."
-# 1. Fix TASK_STRUCT_NON_ROOT_USER_APP_PROC in include/linux/susfs_def.h
-if ! grep -q "TASK_STRUCT_NON_ROOT_USER_APP_PROC" include/linux/susfs_def.h; then
-  sed -i '/#define INODE_STATE_OPEN_REDIRECT/a\#define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(24)' include/linux/susfs_def.h
-fi
+echo "Applying SuSFS compatibility fixes via Python..."
+python3 $GITHUB_WORKSPACE/apply_susfs_fixes.py $GITHUB_WORKSPACE/device_kernel
 
-# 2. Fix susfs_task_state in include/linux/sched.h
-if ! grep -q "susfs_task_state" include/linux/sched.h; then
-  sed -i '/randomized_struct_fields_end/i\#if defined(CONFIG_KSU_SUSFS)\n\tu64 susfs_task_state;\n\tu64 susfs_last_fake_mnt_id;\n#endif' include/linux/sched.h
-fi
-
-# 3. Fix namespace.c Hunk #1
-if ! grep -q "susfs_mnt_id_ida" fs/namespace.c; then
-  sed -i '/#include "internal.h"/a\#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)\n#include <linux/susfs_def.h>\n#endif\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nextern bool susfs_is_current_ksu_domain(void);\nextern bool susfs_is_current_zygote_domain(void);\nstatic DEFINE_IDA(susfs_mnt_id_ida);\nstatic DEFINE_IDA(susfs_mnt_group_ida);\n#define CL_COPY_MNT_NS BIT(25)\n#endif' fs/namespace.c
-fi
 
 echo "=========================================="
 echo "2. Injecting ReSukiSU driver..."

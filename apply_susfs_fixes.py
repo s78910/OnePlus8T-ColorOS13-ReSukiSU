@@ -1,0 +1,70 @@
+import os
+import sys
+
+def patch_file(filepath, search_str, replace_str):
+    if not os.path.exists(filepath):
+        print(f"[-] File not found: {filepath}")
+        return False
+    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        content = f.read()
+    if search_str not in content:
+        print(f"[-] Target string not found in {filepath}")
+        return False
+    content = content.replace(search_str, replace_str, 1)
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print(f"[+] Successfully patched: {filepath}")
+    return True
+
+def main():
+    kernel_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+    print(f"[*] Applying SuSFS fixes to {kernel_dir}...")
+
+    # 1. susfs_def.h
+    def_h = os.path.join(kernel_dir, "include", "linux", "susfs_def.h")
+    if os.path.exists(def_h):
+        with open(def_h, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        if "TASK_STRUCT_NON_ROOT_USER_APP_PROC" not in content:
+            target = "#define INODE_STATE_OPEN_REDIRECT BIT(27)"
+            inject = "#define INODE_STATE_OPEN_REDIRECT BIT(27)\n#define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(24)"
+            patch_file(def_h, target, inject)
+
+    # 2. sched.h
+    sched_h = os.path.join(kernel_dir, "include", "linux", "sched.h")
+    if os.path.exists(sched_h):
+        with open(sched_h, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        if "susfs_task_state" not in content:
+            target = "\trandomized_struct_fields_end"
+            inject = "#if defined(CONFIG_KSU_SUSFS)\n\tu64 susfs_task_state;\n\tu64 susfs_last_fake_mnt_id;\n#endif\n\trandomized_struct_fields_end"
+            patch_file(sched_h, target, inject)
+
+    # 3. namespace.c
+    namespace_c = os.path.join(kernel_dir, "fs", "namespace.c")
+    if os.path.exists(namespace_c):
+        with open(namespace_c, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        if "susfs_mnt_id_ida" not in content:
+            target = '#include "internal.h"'
+            inject = '''#include "internal.h"
+
+#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)
+#include <linux/susfs_def.h>
+#endif
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern bool susfs_is_current_ksu_domain(void);
+extern bool susfs_is_current_zygote_domain(void);
+
+static DEFINE_IDA(susfs_mnt_id_ida);
+static DEFINE_IDA(susfs_mnt_group_ida);
+
+#define CL_COPY_MNT_NS BIT(25)
+#endif'''
+            patch_file(namespace_c, target, inject)
+
+    print("[*] All SuSFS fixes applied!")
+
+if __name__ == "__main__":
+    main()
