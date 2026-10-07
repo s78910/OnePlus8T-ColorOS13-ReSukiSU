@@ -22,10 +22,12 @@ jobs:
       - name: Maximize build space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
-          sudo fallocate -l 10G /swapfile || true
-          sudo chmod 600 /swapfile || true
-          sudo mkswap /swapfile || true
-          sudo swapon /swapfile || true
+          if [ ! -f /swapfile ]; then
+            sudo fallocate -l 10G /swapfile || true
+            sudo chmod 600 /swapfile || true
+            sudo mkswap /swapfile || true
+            sudo swapon /swapfile || true
+          fi
           free -h
 
       - name: Install dependencies
@@ -80,6 +82,47 @@ jobs:
           patch -p1 --forward --ignore-whitespace < susfs_src/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
           grep -q "CONFIG_KSU_SUSFS" fs/Makefile || echo "obj-\$(CONFIG_KSU_SUSFS) += susfs.o" >> fs/Makefile
 
+          echo "Fixing SuSFS headers and structures..."
+          # Fix TASK_STRUCT_NON_ROOT_USER_APP_PROC definition in susfs_def.h
+          if ! grep -q "TASK_STRUCT_NON_ROOT_USER_APP_PROC" include/linux/susfs_def.h; then
+            sed -i '/#define INODE_STATE_OPEN_REDIRECT/a\#define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(24)' include/linux/susfs_def.h
+          fi
+
+          # Fix susfs_task_state inside task_struct in include/linux/sched.h
+          if ! grep -q "susfs_task_state" include/linux/sched.h; then
+            sed -i '/randomized_struct_fields_end/i\#if defined(CONFIG_KSU_SUSFS)\n\tu64 susfs_task_state;\n\tu64 susfs_last_fake_mnt_id;\n#endif' include/linux/sched.h
+          fi
+
+          # Fix namespace.c missing Hunk #1 definitions
+          if ! grep -q "susfs_mnt_id_ida" fs/namespace.c; then
+            python3 -c "
+with open('fs/namespace.c', 'r') as f:
+    content = f.read()
+target = '#include \"internal.h\"'
+inject = '''#include \"internal.h\"
+
+#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)
+#include <linux/susfs_def.h>
+#endif
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern bool susfs_is_current_ksu_domain(void);
+extern bool susfs_is_current_zygote_domain(void);
+
+static DEFINE_IDA(susfs_mnt_id_ida);
+static DEFINE_IDA(susfs_mnt_group_ida);
+
+#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
+#endif
+'''
+if target in content:
+    content = content.replace(target, inject, 1)
+    with open('fs/namespace.c', 'w') as f:
+        f.write(content)
+    print('fs/namespace.c successfully patched!')
+"
+          fi
+
           echo "2. Injecting ReSukiSU driver..."
           curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
@@ -122,7 +165,7 @@ jobs:
           cd $GITHUB_WORKSPACE/device_kernel
           export PATH=$GITHUB_WORKSPACE/clang-custom/bin:$PATH
 
-          # Stock build environment spoofing
+          # Stock build environment spoofing (matches user screenshot)
           export KBUILD_BUILD_USER="root"
           export KBUILD_BUILD_HOST="dg02-pool06-kvm44"
           export KBUILD_BUILD_VERSION="1"
