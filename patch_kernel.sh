@@ -19,10 +19,6 @@ echo "Applying 50_add_susfs_in_kernel-4.19.patch..."
 patch -p1 --forward --ignore-whitespace < susfs_src/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
 grep -q "CONFIG_KSU_SUSFS" fs/Makefile || echo "obj-\$(CONFIG_KSU_SUSFS) += susfs.o" >> fs/Makefile
 
-echo "Applying SuSFS compatibility fixes via Python..."
-python3 $GITHUB_WORKSPACE/apply_susfs_fixes.py $GITHUB_WORKSPACE/device_kernel
-
-
 echo "=========================================="
 echo "2. Injecting ReSukiSU driver..."
 echo "=========================================="
@@ -32,6 +28,12 @@ echo "=========================================="
 echo "3. Injecting non-GKI 4.19 syscall hooks..."
 echo "=========================================="
 curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/syscall_hook_patches.sh" | bash -s
+
+echo "=========================================="
+echo "4. Applying SuSFS & BakaSU compatibility fixes via Python..."
+echo "=========================================="
+python3 $GITHUB_WORKSPACE/apply_susfs_fixes.py $GITHUB_WORKSPACE/device_kernel
+
 
 echo "=========================================="
 echo "4. Spoofing Stock Version to 4.19.157-perf+..."

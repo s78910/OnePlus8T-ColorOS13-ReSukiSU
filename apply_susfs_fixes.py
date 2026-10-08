@@ -18,7 +18,7 @@ def patch_file(filepath, search_str, replace_str):
 
 def main():
     kernel_dir = sys.argv[1] if len(sys.argv) > 1 else "."
-    print(f"[*] Applying SuSFS fixes to {kernel_dir}...")
+    print(f"[*] Applying SuSFS & BakaSU compatibility fixes to {kernel_dir}...")
 
     # 1. susfs_def.h
     def_h = os.path.join(kernel_dir, "include", "linux", "susfs_def.h")
@@ -77,7 +77,6 @@ extern void susfs_spoof_uname(struct new_utsname* tmp);
 SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)'''
             patch_file(sys_c, target, inject)
 
-            # Inject hook inside newuname
             target_hook = "up_read(&uts_sem);"
             inject_hook = '''#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 	susfs_spoof_uname(&tmp);
@@ -85,7 +84,20 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)'''
 	up_read(&uts_sem);'''
             patch_file(sys_c, target_hook, inject_hook)
 
-    print("[*] All SuSFS fixes applied!")
+    # 5. drivers/input/input.c: Remove incompatible ksu_input_hook to satisfy inline_hook_check.mk
+    input_c = os.path.join(kernel_dir, "drivers", "input", "input.c")
+    if os.path.exists(input_c):
+        with open(input_c, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        if "ksu_input_hook" in content:
+            content = content.replace("extern bool ksu_input_hook __read_mostly;\n", "")
+            content = content.replace("if (unlikely(ksu_input_hook))\n\t\tksu_handle_input_handle_event(&type, &code, &value);", "ksu_handle_input_handle_event(&type, &code, &value);")
+            content = content.replace("if (unlikely(ksu_input_hook))\n\tksu_handle_input_handle_event(&type, &code, &value);", "ksu_handle_input_handle_event(&type, &code, &value);")
+            with open(input_c, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"[+] Successfully sanitized incompatible ksu_input_hook from: {input_c}")
+
+    print("[*] All SuSFS & BakaSU fixes applied!")
 
 if __name__ == "__main__":
     main()
