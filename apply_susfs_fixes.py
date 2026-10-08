@@ -27,6 +27,10 @@ def main():
             content = f.read()
 
         susfs_def_additions = '''
+#ifndef SUSFS_MAGIC
+#define SUSFS_MAGIC 0xFAFAFAFA
+#endif
+
 #ifndef CMD_SUSFS_ADD_SUS_PATH_LOOP
 #define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
 #endif
@@ -119,6 +123,10 @@ static inline bool susfs_is_current_proc_umounted(void) {
         content = content.replace('int susfs_get_enabled_features(char __user* buf, size_t bufsize);', 'int susfs_get_enabled_features_legacy(char __user* buf, size_t bufsize);')
 
         susfs_h_additions = '''
+#ifndef SUSFS_MAGIC
+#define SUSFS_MAGIC 0xFAFAFAFA
+#endif
+
 /* Forward declarations for BakaSU dispatch */
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 void susfs_add_sus_path(void __user **user_info);
@@ -443,6 +451,18 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)'''
             with open(exec_c, 'w', encoding='utf-8') as f:
                 f.write(content)
             print(f"[+] Successfully sanitized incompatible hooks from: {exec_c}")
+
+    # 11. drivers/kernelsu/supercall/supercall.c: Ensure susfs_def.h is included
+    for sc_sub in ["drivers/kernelsu/supercall/supercall.c", "KernelSU/kernel/supercall/supercall.c"]:
+        sc_path = os.path.join(kernel_dir, sc_sub)
+        if os.path.exists(sc_path):
+            with open(sc_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            if "linux/susfs_def.h" not in content:
+                content = content.replace("#include <linux/susfs.h>", "#include <linux/susfs.h>\n#include <linux/susfs_def.h>")
+                with open(sc_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                print(f"[+] Successfully ensured susfs_def.h included in {sc_path}")
 
     print("[*] All SuSFS & BakaSU fixes applied!")
 
