@@ -84,7 +84,7 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)'''
 	up_read(&uts_sem);'''
             patch_file(sys_c, target_hook, inject_hook)
 
-    # 5. drivers/input/input.c: Remove incompatible ksu_input_hook to satisfy inline_hook_check.mk
+    # 5. drivers/input/input.c: Remove incompatible ksu_input_hook
     input_c = os.path.join(kernel_dir, "drivers", "input", "input.c")
     if os.path.exists(input_c):
         with open(input_c, 'r', encoding='utf-8', errors='ignore') as f:
@@ -96,6 +96,48 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)'''
             with open(input_c, 'w', encoding='utf-8') as f:
                 f.write(content)
             print(f"[+] Successfully sanitized incompatible ksu_input_hook from: {input_c}")
+
+    # 6. fs/read_write.c: Remove incompatible ksu_init_rc_hook and ksu_vfs_read_hook
+    rw_c = os.path.join(kernel_dir, "fs", "read_write.c")
+    if os.path.exists(rw_c):
+        with open(rw_c, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        if "ksu_init_rc_hook" in content or "ksu_vfs_read_hook" in content:
+            content = content.replace("extern bool ksu_init_rc_hook __read_mostly;\n", "")
+            content = content.replace("extern bool ksu_vfs_read_hook __read_mostly;\n", "")
+            content = content.replace("if (unlikely(ksu_init_rc_hook))\n\t\tksu_handle_sys_read(fd, &buf, &count);", "ksu_handle_sys_read(fd, &buf, &count);")
+            content = content.replace("if (unlikely(ksu_init_rc_hook))\n\tksu_handle_sys_read(fd, &buf, &count);", "ksu_handle_sys_read(fd, &buf, &count);")
+            content = content.replace("if (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, &buf, &count);", "ksu_handle_sys_read(fd, &buf, &count);")
+            content = content.replace("if (unlikely(ksu_vfs_read_hook))\n\tksu_handle_sys_read(fd, &buf, &count);", "ksu_handle_sys_read(fd, &buf, &count);")
+            with open(rw_c, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"[+] Successfully sanitized incompatible hooks from: {rw_c}")
+
+    # 7. fs/stat.c: Remove incompatible ksu_init_rc_hook if any
+    stat_c = os.path.join(kernel_dir, "fs", "stat.c")
+    if os.path.exists(stat_c):
+        with open(stat_c, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        if "ksu_init_rc_hook" in content:
+            content = content.replace("extern bool ksu_init_rc_hook __read_mostly;\n", "")
+            content = content.replace("if (unlikely(ksu_init_rc_hook))\n\t\tksu_handle_stat(&dfd, &filename, &flag);", "ksu_handle_stat(&dfd, &filename, &flag);")
+            content = content.replace("if (unlikely(ksu_init_rc_hook))\n\tksu_handle_stat(&dfd, &filename, &flag);", "ksu_handle_stat(&dfd, &filename, &flag);")
+            with open(stat_c, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"[+] Successfully sanitized incompatible hooks from: {stat_c}")
+
+    # 8. fs/exec.c: Remove incompatible ksu_execveat_hook if any
+    exec_c = os.path.join(kernel_dir, "fs", "exec.c")
+    if os.path.exists(exec_c):
+        with open(exec_c, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        if "ksu_execveat_hook" in content:
+            content = content.replace("extern bool ksu_execveat_hook __read_mostly;\n", "")
+            content = content.replace("if (unlikely(ksu_execveat_hook))\n\t\tksu_handle_execveat(&fd, &filename, &flags);", "ksu_handle_execveat(&fd, &filename, &flags);")
+            content = content.replace("if (unlikely(ksu_execveat_hook))\n\tksu_handle_execveat(&fd, &filename, &flags);", "ksu_handle_execveat(&fd, &filename, &flags);")
+            with open(exec_c, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"[+] Successfully sanitized incompatible hooks from: {exec_c}")
 
     print("[*] All SuSFS & BakaSU fixes applied!")
 
