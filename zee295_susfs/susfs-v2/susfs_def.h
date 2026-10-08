@@ -2,6 +2,7 @@
 #define KSU_SUSFS_DEF_H
 
 #include <linux/bits.h>
+#include <linux/cred.h>
 
 /********/
 /* ENUM */
@@ -14,6 +15,7 @@
 #define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
 #define CMD_SUSFS_ADD_SUS_MOUNT 0x55560 /* deprecated */
 #define CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS 0x55561
+#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS
 #define CMD_SUSFS_UMOUNT_FOR_ZYGOTE_ISO_SERVICE 0x55562 /* deprecated */
 #define CMD_SUSFS_ADD_SUS_KSTAT 0x55570
 #define CMD_SUSFS_UPDATE_SUS_KSTAT 0x55571
@@ -53,6 +55,8 @@
  */
 
 #define TIF_PROC_UMOUNTED 33
+#define TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT 34
+#define TIF_PROC_NO_SU 35
 
 #define AS_FLAGS_SUS_PATH 33
 #define AS_FLAGS_SUS_MOUNT 34
@@ -76,6 +80,10 @@
 
 #define MAGIC_MOUNT_WORKDIR "/debug_ramdisk/workdir"
 
+#ifndef FUSE_SUPER_MAGIC
+#define FUSE_SUPER_MAGIC 0x65735546
+#endif
+
 static inline bool susfs_is_current_proc_umounted(void) {
 	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
 }
@@ -83,5 +91,57 @@ static inline bool susfs_is_current_proc_umounted(void) {
 static inline void susfs_set_current_proc_umounted(void) {
 	set_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
 }
+
+static inline void susfs_clear_current_proc_umounted(void) {
+	clear_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+}
+
+static inline bool susfs_is_current_proc_umounted_for_zygote_next(void) {
+	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
+}
+
+static inline void susfs_set_current_proc_umounted_for_zygote_next(void) {
+	set_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
+}
+
+static inline void susfs_clear_current_proc_umounted_for_zygote_next(void) {
+	clear_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
+}
+
+static inline bool susfs_is_current_proc_umounted_app(void) {
+	return (test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) &&
+			current_uid().val >= 10000);
+}
+
+static inline bool susfs_is_current_proc_no_su(void) {
+	return test_ti_thread_flag(&current->thread_info, TIF_PROC_NO_SU);
+}
+
+static inline void susfs_set_current_proc_no_su(void) {
+	set_ti_thread_flag(&current->thread_info, TIF_PROC_NO_SU);
+}
+
+static inline void susfs_clear_current_proc_no_su(void) {
+	clear_ti_thread_flag(&current->thread_info, TIF_PROC_NO_SU);
+}
+
+#define SUSFS_IS_INODE_SUS_MAP(inode) \
+		inode && \
+		unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_state)) && \
+		susfs_is_current_proc_umounted_app()
+
+#define SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(inode) \
+		inode && \
+		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &inode->i_state))
+
+#define SUSFS_IS_INODE_OPEN_REDIRECT(inode) \
+		inode && \
+		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &inode->i_state)) && \
+		susfs_is_current_proc_umounted_app()
+
+#ifdef CONFIG_KSU_SUSFS
+void susfs_start_sdcard_monitor_fn(void);
+void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info);
+#endif
 
 #endif // #ifndef KSU_SUSFS_DEF_H

@@ -52,21 +52,38 @@ def main():
     shutil.copyfile(os.path.join(zee295_dir, "susfs-v2", "susfs_def.h"), inc_susfs_def_h)
     print("[+] Copied susfs.c, susfs.h, and susfs_def.h")
 
-    # 2. Add alias in fs/susfs.c
+    # 2. Add aliases and stubs in fs/susfs.c
     with open(fs_susfs_c, 'r', encoding='utf-8', errors='ignore') as f:
         c_content = f.read()
     if "susfs_set_hide_sus_mnts_for_non_su_procs" not in c_content:
         c_content += '''
-/* BakaSU compatibility alias */
+/* BakaSU compatibility aliases and stubs */
+#include <linux/workqueue.h>
+
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info) {
 \tsusfs_set_hide_sus_mnts_for_all_procs(user_info);
 }
 #endif
+
+void susfs_start_sdcard_monitor_fn(void) {
+}
+
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+extern void susfs_run_sus_path_loop(uid_t uid);
+#endif
+
+static void susfs_run_extra_works(struct work_struct *work) {
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tsusfs_run_sus_path_loop(0);
+#endif
+}
+
+DECLARE_WORK(susfs_extra_works, susfs_run_extra_works);
 '''
         with open(fs_susfs_c, 'w', encoding='utf-8') as f:
             f.write(c_content)
-        print("[+] Added susfs_set_hide_sus_mnts_for_non_su_procs alias to fs/susfs.c")
+        print("[+] Added BakaSU compatibility aliases, stubs & susfs_extra_works to fs/susfs.c")
 
     # 3. Add to fs/Makefile
     fs_makefile = os.path.join(kernel_dir, "fs", "Makefile")
@@ -99,7 +116,20 @@ static atomic64_t susfs_ksu_mounts = ATOMIC64_INIT(0);
 #endif'''
             patch_file(ns_c, target, inject)
 
-    # 5. Prepare 01_add_susfs_hooks.patch with Hunk 1 removed (so patch succeeds 100%)
+    # 4b. Pre-inject declarations into fs/proc/task_mmu.c
+    tm_c = os.path.join(kernel_dir, "fs", "proc", "task_mmu.c")
+    if os.path.exists(tm_c):
+        with open(tm_c, 'r', encoding='utf-8', errors='ignore') as f:
+            tm_content = f.read()
+        if "linux/susfs_def.h" not in tm_content:
+            target = '#include <linux/ctype.h>'
+            inject = '''#include <linux/ctype.h>
+#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP)
+#include <linux/susfs_def.h>
+#endif'''
+            patch_file(tm_c, target, inject)
+
+    # 5. Prepare 01_add_susfs_hooks.patch with Hunk 1s removed (so patch succeeds 100%)
     p01_src = os.path.join(zee295_dir, "susfs-patches", "01_add_susfs_hooks.patch")
     with open(p01_src, 'r', encoding='utf-8', errors='ignore') as f:
         p01_text = f.read()
@@ -112,6 +142,15 @@ static atomic64_t susfs_ksu_mounts = ATOMIC64_INIT(0);
     if idx1 != -1 and idx2 != -1:
         p01_text = p01_text[:idx1] + p01_text[idx2:]
         print("[+] Omitted pre-injected Hunk 1 of fs/namespace.c from 01_add_susfs_hooks.patch")
+
+    # Locate and omit Hunk 1 of fs/proc/task_mmu.c
+    tm_h1_tag = '@@ -21,6 +21,9 @@'
+    tm_h2_tag = '@@ -348,6 +351,10 @@'
+    tm_idx1 = p01_text.find(tm_h1_tag)
+    tm_idx2 = p01_text.find(tm_h2_tag)
+    if tm_idx1 != -1 and tm_idx2 != -1:
+        p01_text = p01_text[:tm_idx1] + p01_text[tm_idx2:]
+        print("[+] Omitted pre-injected Hunk 1 of fs/proc/task_mmu.c from 01_add_susfs_hooks.patch")
 
     p01_tmp = os.path.join(kernel_dir, "01_temp.patch")
     with open(p01_tmp, 'w', encoding='utf-8') as f:
@@ -127,10 +166,6 @@ static atomic64_t susfs_ksu_mounts = ATOMIC64_INIT(0);
     # 7. Apply 03_fix_exec.patch (if needed)
     p03 = os.path.join(zee295_dir, "susfs-patches", "03_fix_exec.patch")
     apply_patch(kernel_dir, p03)
-
-    # 8. Apply 05_fix_task_mmu.patch
-    p05 = os.path.join(zee295_dir, "susfs-patches", "05_fix_task_mmu.patch")
-    apply_patch(kernel_dir, p05)
 
     # Clean up any patch backup/reject files
     for root, dirs, files in os.walk(kernel_dir):
