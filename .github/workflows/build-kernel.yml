@@ -111,6 +111,9 @@ jobs:
             CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/gcc-32/bin/arm-linux-androideabi- \
             Image dtbs
 
+          echo "=== Verified Built Kernel Banner ==="
+          strings out/arch/arm64/boot/Image | grep "Linux version" || true
+
       - name: Package AnyKernel3
         run: |
           cd $GITHUB_WORKSPACE/device_kernel

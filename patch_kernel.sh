@@ -4,44 +4,29 @@ set -e
 cd $GITHUB_WORKSPACE/device_kernel
 
 echo "=========================================="
-echo "1. Cloning susfs4ksu 4.19 patchset..."
-echo "=========================================="
-git clone --depth=1 -b kernel-4.19 https://github.com/ShirkNeko/susfs4ksu.git susfs_src
-
-echo "Copying SuSFS source files to kernel..."
-cp -f susfs_src/kernel_patches/fs/susfs.c fs/
-cp -f susfs_src/kernel_patches/fs/sus_su.c fs/ || true
-cp -f susfs_src/kernel_patches/include/linux/susfs.h include/linux/
-cp -f susfs_src/kernel_patches/include/linux/susfs_def.h include/linux/
-cp -f susfs_src/kernel_patches/include/linux/sus_su.h include/linux/ || true
-
-echo "Applying 50_add_susfs_in_kernel-4.19.patch..."
-patch -p1 --forward --ignore-whitespace < susfs_src/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
-grep -q "CONFIG_KSU_SUSFS" fs/Makefile || echo "obj-\$(CONFIG_KSU_SUSFS) += susfs.o" >> fs/Makefile
-
-echo "=========================================="
-echo "2. Injecting ReSukiSU driver..."
+echo "1. Injecting ReSukiSU driver..."
 echo "=========================================="
 curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
 echo "=========================================="
-echo "3. Injecting non-GKI 4.19 syscall hooks..."
+echo "2. Applying SuSFS v2 & ReSukiSU integration..."
 echo "=========================================="
-curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/syscall_hook_patches.sh" | bash -s
+python3 $GITHUB_WORKSPACE/apply_susfs_fixes.py $GITHUB_WORKSPACE/device_kernel $GITHUB_WORKSPACE/zee295_susfs
 
 echo "=========================================="
-echo "4. Applying SuSFS & BakaSU compatibility fixes via Python..."
-echo "=========================================="
-python3 $GITHUB_WORKSPACE/apply_susfs_fixes.py $GITHUB_WORKSPACE/device_kernel
-
-echo "=========================================="
-echo "5. Spoofing Stock Version to 4.19.157-perf+..."
+echo "3. Spoofing Stock Version to 4.19.157-perf+..."
 echo "=========================================="
 sed -i 's/^SUBLEVEL =.*/SUBLEVEL = 157/' Makefile
 sed -i 's/^EXTRAVERSION =.*/EXTRAVERSION =/' Makefile
 
+# Prevent scripts/setlocalversion from appending extra '+' to vermagic
+echo '#!/bin/sh' > scripts/setlocalversion
+echo 'echo ""' >> scripts/setlocalversion
+chmod +x scripts/setlocalversion
+touch .scmversion
+
 echo "=========================================="
-echo "6. Applying OnePlus defconfig, Manual Hook & SuSFS flags..."
+echo "4. Applying OnePlus defconfig, Manual Hook & SuSFS flags..."
 echo "=========================================="
 DEFCONFIG="arch/arm64/configs/vendor/kona-perf_defconfig"
 sed -i '$a\CONFIG_TECHPACK_CAMERA_ONEPLUS=y' $DEFCONFIG
