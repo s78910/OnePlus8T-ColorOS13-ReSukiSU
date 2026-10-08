@@ -189,17 +189,13 @@ void susfs_start_sdcard_monitor_fn(void);
 /* --- BakaSU Supercall Bridge Handlers --- */
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 void susfs_add_sus_path(void __user **user_info) {
-\tint ret = 0;
 \tif (!user_info || !*user_info) return;
-\tret = susfs_add_sus_path_legacy((struct st_susfs_sus_path __user*)*user_info);
-\tcopy_to_user(&((struct st_susfs_sus_path __user*)*user_info)->err, &ret, sizeof(ret));
+\tsusfs_add_sus_path_legacy((struct st_susfs_sus_path __user*)*user_info);
 }
 
 void susfs_add_sus_path_loop(void __user **user_info) {
-\tint ret = 0;
 \tif (!user_info || !*user_info) return;
-\tret = susfs_add_sus_path_legacy((struct st_susfs_sus_path __user*)*user_info);
-\tcopy_to_user(&((struct st_susfs_sus_path __user*)*user_info)->err, &ret, sizeof(ret));
+\tsusfs_add_sus_path_legacy((struct st_susfs_sus_path __user*)*user_info);
 }
 #endif
 
@@ -215,17 +211,13 @@ void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info) {
 
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 void susfs_add_sus_kstat(void __user **user_info) {
-\tint ret = 0;
 \tif (!user_info || !*user_info) return;
-\tret = susfs_add_sus_kstat_legacy((struct st_susfs_sus_kstat __user*)*user_info);
-\tcopy_to_user(&((struct st_susfs_sus_kstat __user*)*user_info)->err, &ret, sizeof(ret));
+\tsusfs_add_sus_kstat_legacy((struct st_susfs_sus_kstat __user*)*user_info);
 }
 
 void susfs_update_sus_kstat(void __user **user_info) {
-\tint ret = 0;
 \tif (!user_info || !*user_info) return;
-\tret = susfs_update_sus_kstat_legacy((struct st_susfs_sus_kstat __user*)*user_info);
-\tcopy_to_user(&((struct st_susfs_sus_kstat __user*)*user_info)->err, &ret, sizeof(ret));
+\tsusfs_update_sus_kstat_legacy((struct st_susfs_sus_kstat __user*)*user_info);
 }
 #endif
 
@@ -256,10 +248,8 @@ void susfs_set_cmdline_or_bootconfig(void __user **user_info) {
 
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 void susfs_add_open_redirect(void __user **user_info) {
-\tint ret = 0;
 \tif (!user_info || !*user_info) return;
-\tret = susfs_add_open_redirect_legacy((struct st_susfs_open_redirect __user*)*user_info);
-\tcopy_to_user(&((struct st_susfs_open_redirect __user*)*user_info)->err, &ret, sizeof(ret));
+\tsusfs_add_open_redirect_legacy((struct st_susfs_open_redirect __user*)*user_info);
 }
 #endif
 
