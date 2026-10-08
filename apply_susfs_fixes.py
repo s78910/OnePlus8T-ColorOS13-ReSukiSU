@@ -524,6 +524,57 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)'''
                     f.write(k_content)
                 print(f"[+] Successfully decoupled KSU_SUSFS from hook choice in {kconfig_path}")
 
+        # 10. BakaSU ksud_integration.c: Ensure manual hook branch & exports are active with SuSFS
+        for ksud_sub in ["runtime/ksud_integration.c", "kernel/runtime/ksud_integration.c"]:
+            ksud_c = os.path.join(kernel_dir, sub, ksud_sub)
+            if os.path.exists(ksud_c):
+                with open(ksud_c, 'r', encoding='utf-8', errors='ignore') as f:
+                    k_content = f.read()
+
+                if "#include <linux/export.h>" not in k_content:
+                    k_content = "#include <linux/export.h>\n" + k_content
+
+                # When CONFIG_KSU_MANUAL_HOOK is enabled, do not let CONFIG_KSU_SUSFS bypass manual hook definitions
+                k_content = re.sub(
+                    r'#elif\s+defined\(CONFIG_KSU_SUSFS\)\s*\n\s*DEFINE_STATIC_KEY_TRUE\(ksu_is_init_rc_hook_enabled\);',
+                    '#elif defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)\n    DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);',
+                    k_content
+                )
+
+                # Export ksu_init_rc_hook so fs/read_write.c and lsm_hooks.c can resolve it
+                if "EXPORT_SYMBOL(ksu_init_rc_hook);" not in k_content:
+                    k_content = k_content.replace(
+                        "bool ksu_init_rc_hook __read_mostly = true;",
+                        "bool ksu_init_rc_hook __read_mostly = true;\nEXPORT_SYMBOL(ksu_init_rc_hook);"
+                    )
+
+                # Export ksu_input_hook so drivers/input/input.c can resolve it
+                if "EXPORT_SYMBOL(ksu_input_hook);" not in k_content:
+                    k_content = k_content.replace(
+                        "bool ksu_input_hook __read_mostly = true;",
+                        "bool ksu_input_hook __read_mostly = true;\nEXPORT_SYMBOL(ksu_input_hook);"
+                    )
+
+                with open(ksud_c, 'w', encoding='utf-8') as f:
+                    f.write(k_content)
+                print(f"[+] Successfully patched {ksud_c} to export manual hook symbols")
+
+        # 11. BakaSU core_init.c: Ensure susfs_init() is invoked during ksu_hook_init under MANUAL_HOOK
+        for ci_sub in ["core_init.c", "core/init.c", "kernel/core_init.c"]:
+            ci_c = os.path.join(kernel_dir, sub, ci_sub)
+            if os.path.exists(ci_c):
+                with open(ci_c, 'r', encoding='utf-8', errors='ignore') as f:
+                    ci_content = f.read()
+
+                target_hook_pattern = r'(#elif\s+defined\(CONFIG_KSU_MANUAL_HOOK\)[\s\S]*?ksu_lsm_hook_built_in_init\(\);\s*#endif)'
+                m_ci = re.search(target_hook_pattern, ci_content)
+                if m_ci and "susfs_init();" not in m_ci.group(1):
+                    replacement = m_ci.group(1) + "\n#if defined(CONFIG_KSU_SUSFS)\n    susfs_init();\n#endif"
+                    ci_content = ci_content[:m_ci.start(1)] + replacement + ci_content[m_ci.end(1):]
+                    with open(ci_c, 'w', encoding='utf-8') as f:
+                        f.write(ci_content)
+                    print(f"[+] Successfully patched {ci_c} to call susfs_init() under CONFIG_KSU_MANUAL_HOOK")
+
     print("[*] All SuSFS & BakaSU fixes applied cleanly without corrupting kernel ABI!")
 
 if __name__ == "__main__":
