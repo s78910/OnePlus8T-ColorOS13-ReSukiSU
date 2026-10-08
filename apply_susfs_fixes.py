@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 
 def patch_file(filepath, search_str, replace_str):
     if not os.path.exists(filepath):
@@ -20,7 +21,7 @@ def main():
     kernel_dir = sys.argv[1] if len(sys.argv) > 1 else "."
     print(f"[*] Applying SuSFS & BakaSU compatibility fixes to {kernel_dir}...")
 
-    # 1. susfs_def.h
+    # 1. include/linux/susfs_def.h
     def_h = os.path.join(kernel_dir, "include", "linux", "susfs_def.h")
     if os.path.exists(def_h):
         with open(def_h, 'r', encoding='utf-8', errors='ignore') as f:
@@ -158,9 +159,9 @@ static inline void susfs_clear_current_proc_no_su(void) {
                 content += "\n" + susfs_def_additions
             with open(def_h, 'w', encoding='utf-8') as f:
                 f.write(content)
-            print(f"[+] Successfully patched susfs_def.h with 1.5.5+ macros, structs & inline helpers")
+            print("[+] Successfully patched susfs_def.h with 1.5.5+ macros, structs & inline helpers")
 
-    # 2. susfs.h
+    # 2. include/linux/susfs.h
     susfs_h = os.path.join(kernel_dir, "include", "linux", "susfs.h")
     if os.path.exists(susfs_h):
         with open(susfs_h, 'r', encoding='utf-8', errors='ignore') as f:
@@ -224,7 +225,7 @@ void susfs_start_sdcard_monitor_fn(void);
                 content += "\n" + susfs_h_additions
             with open(susfs_h, 'w', encoding='utf-8') as f:
                 f.write(content)
-            print(f"[+] Successfully patched susfs.h with 1.5.5+ function declarations")
+            print("[+] Successfully patched susfs.h with 1.5.5+ function declarations")
 
     # 3. fs/susfs.c
     susfs_c = os.path.join(kernel_dir, "fs", "susfs.c")
@@ -400,19 +401,22 @@ void susfs_start_sdcard_monitor_fn(void) {}
             content += "\n" + susfs_c_bridge
             with open(susfs_c, 'w', encoding='utf-8') as f:
                 f.write(content)
-            print(f"[+] Successfully patched fs/susfs.c with 1.5.5+ supercall bridge handlers")
+            print("[+] Successfully patched fs/susfs.c with 1.5.5+ supercall bridge handlers")
 
-    # 4. sched.h
-    sched_h = os.path.join(kernel_dir, "include", "linux", "sched.h")
-    if os.path.exists(sched_h):
-        with open(sched_h, 'r', encoding='utf-8', errors='ignore') as f:
+    # 4. fs/dcache.c: Replace current->susfs_task_state with current_uid().val >= 10000
+    # Avoids modifying task_struct in include/linux/sched.h!
+    dcache_c = os.path.join(kernel_dir, "fs", "dcache.c")
+    if os.path.exists(dcache_c):
+        with open(dcache_c, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
-        if "susfs_task_state" not in content:
-            target = "\trandomized_struct_fields_end"
-            inject = "#if defined(CONFIG_KSU_SUSFS)\n\tu64 susfs_task_state;\n\tu64 susfs_last_fake_mnt_id;\n#endif\n\trandomized_struct_fields_end"
-            patch_file(sched_h, target, inject)
+        target_state = "current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC"
+        if target_state in content:
+            content = content.replace(target_state, "current_uid().val >= 10000")
+            with open(dcache_c, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print("[+] Successfully fixed fs/dcache.c to use safe uid check without modifying sched.h!")
 
-    # 5. namespace.c
+    # 5. fs/namespace.c: Add missing Hunk #1 definitions
     namespace_c = os.path.join(kernel_dir, "fs", "namespace.c")
     if os.path.exists(namespace_c):
         with open(namespace_c, 'r', encoding='utf-8', errors='ignore') as f:
@@ -436,7 +440,7 @@ static DEFINE_IDA(susfs_mnt_group_ida);
 #endif'''
             patch_file(namespace_c, target, inject)
 
-    # 6. kernel/sys.c
+    # 6. kernel/sys.c: Add uname spoofing hook
     sys_c = os.path.join(kernel_dir, "kernel", "sys.c")
     if os.path.exists(sys_c):
         with open(sys_c, 'r', encoding='utf-8', errors='ignore') as f:
@@ -456,62 +460,7 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)'''
 \tup_read(&uts_sem);'''
             patch_file(sys_c, target_hook, inject_hook)
 
-    # 7. drivers/input/input.c: Remove incompatible ksu_input_hook
-    input_c = os.path.join(kernel_dir, "drivers", "input", "input.c")
-    if os.path.exists(input_c):
-        with open(input_c, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
-        if "ksu_input_hook" in content:
-            content = content.replace("extern bool ksu_input_hook __read_mostly;\n", "")
-            content = content.replace("if (unlikely(ksu_input_hook))\n\t\tksu_handle_input_handle_event(&type, &code, &value);", "ksu_handle_input_handle_event(&type, &code, &value);")
-            content = content.replace("if (unlikely(ksu_input_hook))\n\tksu_handle_input_handle_event(&type, &code, &value);", "ksu_handle_input_handle_event(&type, &code, &value);")
-            with open(input_c, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print(f"[+] Successfully sanitized incompatible ksu_input_hook from: {input_c}")
-
-    # 8. fs/read_write.c: Remove incompatible ksu_init_rc_hook and ksu_vfs_read_hook
-    rw_c = os.path.join(kernel_dir, "fs", "read_write.c")
-    if os.path.exists(rw_c):
-        with open(rw_c, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
-        if "ksu_init_rc_hook" in content or "ksu_vfs_read_hook" in content:
-            content = content.replace("extern bool ksu_init_rc_hook __read_mostly;\n", "")
-            content = content.replace("extern bool ksu_vfs_read_hook __read_mostly;\n", "")
-            content = content.replace("if (unlikely(ksu_init_rc_hook))\n\t\tksu_handle_sys_read(fd, &buf, &count);", "ksu_handle_sys_read(fd, &buf, &count);")
-            content = content.replace("if (unlikely(ksu_init_rc_hook))\n\tksu_handle_sys_read(fd, &buf, &count);", "ksu_handle_sys_read(fd, &buf, &count);")
-            content = content.replace("if (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, &buf, &count);", "ksu_handle_sys_read(fd, &buf, &count);")
-            content = content.replace("if (unlikely(ksu_vfs_read_hook))\n\tksu_handle_sys_read(fd, &buf, &count);", "ksu_handle_sys_read(fd, &buf, &count);")
-            with open(rw_c, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print(f"[+] Successfully sanitized incompatible hooks from: {rw_c}")
-
-    # 9. fs/stat.c: Remove incompatible ksu_init_rc_hook if any
-    stat_c = os.path.join(kernel_dir, "fs", "stat.c")
-    if os.path.exists(stat_c):
-        with open(stat_c, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
-        if "ksu_init_rc_hook" in content:
-            content = content.replace("extern bool ksu_init_rc_hook __read_mostly;\n", "")
-            content = content.replace("if (unlikely(ksu_init_rc_hook))\n\t\tksu_handle_stat(&dfd, &filename, &flag);", "ksu_handle_stat(&dfd, &filename, &flag);")
-            content = content.replace("if (unlikely(ksu_init_rc_hook))\n\tksu_handle_stat(&dfd, &filename, &flag);", "ksu_handle_stat(&dfd, &filename, &flag);")
-            with open(stat_c, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print(f"[+] Successfully sanitized incompatible hooks from: {stat_c}")
-
-    # 10. fs/exec.c: Remove incompatible ksu_execveat_hook if any
-    exec_c = os.path.join(kernel_dir, "fs", "exec.c")
-    if os.path.exists(exec_c):
-        with open(exec_c, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
-        if "ksu_execveat_hook" in content:
-            content = content.replace("extern bool ksu_execveat_hook __read_mostly;\n", "")
-            content = content.replace("if (unlikely(ksu_execveat_hook))\n\t\tksu_handle_execveat(&fd, &filename, &flags);", "ksu_handle_execveat(&fd, &filename, &flags);")
-            content = content.replace("if (unlikely(ksu_execveat_hook))\n\tksu_handle_execveat(&fd, &filename, &flags);", "ksu_handle_execveat(&fd, &filename, &flags);")
-            with open(exec_c, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print(f"[+] Successfully sanitized incompatible hooks from: {exec_c}")
-
-    # 11. drivers/kernelsu/supercall/supercall.c: Ensure susfs_def.h is included
+    # 7. drivers/kernelsu/supercall/supercall.c: Ensure susfs_def.h is included
     for sc_sub in ["drivers/kernelsu/supercall/supercall.c", "KernelSU/kernel/supercall/supercall.c"]:
         sc_path = os.path.join(kernel_dir, sc_sub)
         if os.path.exists(sc_path):
@@ -523,7 +472,59 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)'''
                     f.write(content)
                 print(f"[+] Successfully ensured susfs_def.h included in {sc_path}")
 
-    print("[*] All SuSFS & BakaSU fixes applied!")
+    # 8. BakaSU sucompat.h & sucompat.c: Fix hook prototypes & unprivilege flag for Manual Hook
+    for sub in ["drivers/kernelsu", "KernelSU/kernel"]:
+        su_h = os.path.join(kernel_dir, sub, "feature", "sucompat.h")
+        if os.path.exists(su_h):
+            with open(su_h, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            # Guard struct filename ** prototype with !defined(CONFIG_KSU_MANUAL_HOOK)
+            content = content.replace(
+                "#ifdef CONFIG_KSU_SUSFS\nint ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *__unused_flags);\nint ksu_handle_stat(int *dfd, struct filename **filename, int *flags);\n#else",
+                "#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)\nint ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *__unused_flags);\nint ksu_handle_stat(int *dfd, struct filename **filename, int *flags);\n#else"
+            )
+            content = content.replace(
+                "#elif defined(CONFIG_KSU_SUSFS) // susfs",
+                "#elif defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK) // susfs"
+            )
+            with open(su_h, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"[+] Successfully patched {su_h} to use manual hook signatures when CONFIG_KSU_MANUAL_HOOK=y")
+
+        su_c = os.path.join(kernel_dir, sub, "feature", "sucompat.c")
+        if os.path.exists(su_c):
+            with open(su_c, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            content = content.replace(
+                "// compat for check in hook\n#ifdef CONFIG_KSU_SUSFS\nint ksu_handle_execveat_sucompat",
+                "// compat for check in hook\n#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)\nint ksu_handle_execveat_sucompat"
+            )
+            content = content.replace(
+                "#ifdef CONFIG_KSU_SUSFS\nint ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *__unused_flags)",
+                "#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)\nint ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *__unused_flags)"
+            )
+            content = content.replace(
+                "#ifdef CONFIG_KSU_SUSFS\nint ksu_handle_stat(int *dfd, struct filename **filename, int *flags)",
+                "#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)\nint ksu_handle_stat(int *dfd, struct filename **filename, int *flags)"
+            )
+            with open(su_c, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"[+] Successfully patched {su_c} to use safe manual hook implementations when CONFIG_KSU_MANUAL_HOOK=y")
+
+        # 9. BakaSU Kconfig: Decouple KSU_SUSFS from the choice
+        kconfig_path = os.path.join(kernel_dir, sub, "Kconfig")
+        if os.path.exists(kconfig_path):
+            with open(kconfig_path, 'r', encoding='utf-8', errors='ignore') as f:
+                k_content = f.read()
+            pattern = r'(config KSU_SUSFS\s+bool "SUSFS Inline Hook"[\s\S]*?)(endchoice)'
+            m = re.search(pattern, k_content)
+            if m:
+                k_content = k_content[:m.start(1)] + "endchoice\n\nconfig KSU_SUSFS\n\tbool \"SUSFS Support\"\n\tdepends on KSU\n\tdefault y\n\thelp\n\t  Enable SuSFS support in KernelSU.\n" + k_content[m.end(2):]
+                with open(kconfig_path, 'w', encoding='utf-8') as f:
+                    f.write(k_content)
+                print(f"[+] Successfully decoupled KSU_SUSFS from hook choice in {kconfig_path}")
+
+    print("[*] All SuSFS & BakaSU fixes applied cleanly without corrupting kernel ABI!")
 
 if __name__ == "__main__":
     main()

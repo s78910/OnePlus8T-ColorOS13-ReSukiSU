@@ -96,6 +96,9 @@ jobs:
           ./scripts/config --file out/.config --disable CONFIG_DEBUG_INFO_BTF
           make O=out ARCH=arm64 olddefconfig
 
+          echo "=== Verified Kernel Configurations ==="
+          grep -E "CONFIG_KSU|CONFIG_LOCALVERSION" out/.config || true
+
           make -j$(nproc --all) O=out ARCH=arm64 \
             CC="clang" \
             CLANG_TRIPLE=aarch64-linux-gnu- \

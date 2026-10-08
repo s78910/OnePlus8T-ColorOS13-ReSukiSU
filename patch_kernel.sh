@@ -34,15 +34,14 @@ echo "4. Applying SuSFS & BakaSU compatibility fixes via Python..."
 echo "=========================================="
 python3 $GITHUB_WORKSPACE/apply_susfs_fixes.py $GITHUB_WORKSPACE/device_kernel
 
-
 echo "=========================================="
-echo "4. Spoofing Stock Version to 4.19.157-perf+..."
+echo "5. Spoofing Stock Version to 4.19.157-perf+..."
 echo "=========================================="
 sed -i 's/^SUBLEVEL =.*/SUBLEVEL = 157/' Makefile
 sed -i 's/^EXTRAVERSION =.*/EXTRAVERSION =/' Makefile
 
 echo "=========================================="
-echo "5. Applying OnePlus defconfig & SuSFS flags..."
+echo "6. Applying OnePlus defconfig, Manual Hook & SuSFS flags..."
 echo "=========================================="
 DEFCONFIG="arch/arm64/configs/vendor/kona-perf_defconfig"
 sed -i '$a\CONFIG_TECHPACK_CAMERA_ONEPLUS=y' $DEFCONFIG
@@ -57,8 +56,16 @@ sed -i '/CONFIG_LOCALVERSION/d' $DEFCONFIG
 echo 'CONFIG_LOCALVERSION="-perf+"' >> $DEFCONFIG
 echo 'CONFIG_LOCALVERSION_AUTO=n' >> $DEFCONFIG
 
-# Enable KSU & SuSFS flags
+# Enable KSU & Manual Hook flags (Proven baseline from Run #9)
 echo "CONFIG_KSU=y" >> $DEFCONFIG
+echo "CONFIG_KSU_MANUAL_HOOK=y" >> $DEFCONFIG
+echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y" >> $DEFCONFIG
+echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y" >> $DEFCONFIG
+echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y" >> $DEFCONFIG
+echo "CONFIG_KALLSYMS=y" >> $DEFCONFIG
+echo "CONFIG_KALLSYMS_ALL=y" >> $DEFCONFIG
+
+# Enable SuSFS flags
 echo "CONFIG_KSU_SUSFS=y" >> $DEFCONFIG
 echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> $DEFCONFIG
 echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> $DEFCONFIG
