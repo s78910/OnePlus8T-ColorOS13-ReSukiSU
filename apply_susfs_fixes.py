@@ -300,49 +300,8 @@ EXPORT_SYMBOL(susfs_get_sid_from_name);
                     f.write(sel_content)
                 print(f"[+] Added protected SuSFS SID implementations to {selinux_c}")
 
-        # B. drivers/kernelsu/selinux/rules.c: Set SIDs when rules are loaded
-        rules_c = os.path.join(ksu_root, "selinux", "rules.c")
-        if os.path.exists(rules_c):
-            with open(rules_c, 'r', encoding='utf-8', errors='ignore') as f:
-                r_content = f.read()
-            if "susfs_set_ksu_sid" not in r_content:
-                # Add calls to susfs_set_ksu_sid() inside ksu_load_rules()
-                target_rule = "return 0;"
-                sid_calls = '''#ifdef CONFIG_KSU_SUSFS
-\textern void susfs_set_ksu_sid(void);
-\textern void susfs_set_zygote_sid(void);
-\textern void susfs_set_init_sid(void);
-\tsusfs_set_ksu_sid();
-\tsusfs_set_zygote_sid();
-\tsusfs_set_init_sid();
-#endif
-\treturn 0;'''
-                # Replace the return 0 at end of ksu_load_rules
-                pos = r_content.rfind(target_rule)
-                if pos != -1:
-                    r_content = r_content[:pos] + sid_calls + r_content[pos + len(target_rule):]
-                    with open(rules_c, 'w', encoding='utf-8') as f:
-                        f.write(r_content)
-                    print(f"[+] Added SID initialization in {rules_c}")
-
-        # C. Export __ksu_is_allow_uid_for_current in sucompat.c
-        sucompat_c = os.path.join(ksu_root, "feature", "sucompat.c")
-        if os.path.exists(sucompat_c):
-            with open(sucompat_c, 'r', encoding='utf-8', errors='ignore') as f:
-                sc_content = f.read()
-            if "__ksu_is_allow_uid_for_current" not in sc_content:
-                sc_export = '''
-#ifdef CONFIG_KSU
-bool __ksu_is_allow_uid_for_current(uid_t uid) {
-\treturn ksu_is_allow_uid_for_current(uid);
-}
-EXPORT_SYMBOL(__ksu_is_allow_uid_for_current);
-#endif
-'''
-                sc_content += sc_export
-                with open(sucompat_c, 'w', encoding='utf-8') as f:
-                    f.write(sc_content)
-                print(f"[+] Exported __ksu_is_allow_uid_for_current in {sucompat_c}")
+        # Note: BakaSU already handles SID caching via cache_sid() and already exports
+        # __ksu_is_allow_uid_for_current in policy/allowlist.c
 
         # D. Decouple KSU_SUSFS from hook choice in Kconfig
         kconfig_path = os.path.join(ksu_root, "Kconfig")
