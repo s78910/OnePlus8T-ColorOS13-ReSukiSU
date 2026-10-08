@@ -26,6 +26,9 @@ def main():
         with open(def_h, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
 
+        if "#include <linux/sched.h>" not in content:
+            content = "#include <linux/sched.h>\n#include <linux/thread_info.h>\n#include <linux/cred.h>\n" + content
+
         susfs_def_additions = '''
 #ifndef SUSFS_MAGIC
 #define SUSFS_MAGIC 0xFAFAFAFA
@@ -56,6 +59,16 @@ def main():
 
 #ifndef TASK_STRUCT_NON_ROOT_USER_APP_PROC
 #define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(24)
+#endif
+
+#ifndef TIF_PROC_UMOUNTED
+#define TIF_PROC_UMOUNTED 33
+#endif
+#ifndef TIF_PROC_NO_SU
+#define TIF_PROC_NO_SU 34
+#endif
+#ifndef TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT
+#define TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT 35
 #endif
 
 struct st_susfs_version {
@@ -93,8 +106,48 @@ struct st_susfs_avc_log_spoofing {
 \tint err;
 };
 
+struct work_struct;
+extern struct work_struct susfs_extra_works;
+
 static inline bool susfs_is_current_proc_umounted(void) {
-\treturn false;
+\treturn test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+}
+
+static inline void susfs_set_current_proc_umounted(void) {
+\tset_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+}
+
+static inline void susfs_clear_current_proc_umounted(void) {
+\tclear_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+}
+
+static inline bool susfs_is_current_proc_umounted_for_zygote_next(void) {
+\treturn test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
+}
+
+static inline void susfs_set_current_proc_umounted_for_zygote_next(void) {
+\tset_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
+}
+
+static inline void susfs_clear_current_proc_umounted_for_zygote_next(void) {
+\tclear_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
+}
+
+static inline bool susfs_is_current_proc_umounted_app(void) {
+\treturn (test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) &&
+\t\t\tcurrent_uid().val >= 10000);
+}
+
+static inline bool susfs_is_current_proc_no_su(void) {
+\treturn test_ti_thread_flag(&current->thread_info, TIF_PROC_NO_SU);
+}
+
+static inline void susfs_set_current_proc_no_su(void) {
+\tset_ti_thread_flag(&current->thread_info, TIF_PROC_NO_SU);
+}
+
+static inline void susfs_clear_current_proc_no_su(void) {
+\tclear_ti_thread_flag(&current->thread_info, TIF_PROC_NO_SU);
 }
 '''
         if "CMD_SUSFS_ADD_SUS_PATH_LOOP" not in content:
@@ -105,7 +158,7 @@ static inline bool susfs_is_current_proc_umounted(void) {
                 content += "\n" + susfs_def_additions
             with open(def_h, 'w', encoding='utf-8') as f:
                 f.write(content)
-            print(f"[+] Successfully patched susfs_def.h with 1.5.5+ macros & structs")
+            print(f"[+] Successfully patched susfs_def.h with 1.5.5+ macros, structs & inline helpers")
 
     # 2. susfs.h
     susfs_h = os.path.join(kernel_dir, "include", "linux", "susfs.h")
@@ -126,6 +179,9 @@ static inline bool susfs_is_current_proc_umounted(void) {
 #ifndef SUSFS_MAGIC
 #define SUSFS_MAGIC 0xFAFAFAFA
 #endif
+
+#include <linux/workqueue.h>
+extern struct work_struct susfs_extra_works;
 
 /* Forward declarations for BakaSU dispatch */
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
@@ -175,6 +231,19 @@ void susfs_start_sdcard_monitor_fn(void);
     if os.path.exists(susfs_c):
         with open(susfs_c, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
+
+        if "#include <linux/workqueue.h>" not in content:
+            content = "#include <linux/workqueue.h>\n" + content
+
+        if "susfs_extra_works" not in content:
+            target = "void susfs_init(void) {"
+            replacement = """struct work_struct susfs_extra_works;
+EXPORT_SYMBOL_GPL(susfs_extra_works);
+static void susfs_run_extra_works(struct work_struct *work) {}
+
+void susfs_init(void) {
+\tINIT_WORK(&susfs_extra_works, susfs_run_extra_works);"""
+            content = content.replace(target, replacement, 1)
 
         # Rename legacy function definitions
         content = content.replace('int susfs_add_sus_path(struct st_susfs_sus_path* __user user_info)', 'int susfs_add_sus_path_legacy(struct st_susfs_sus_path* __user user_info)')
