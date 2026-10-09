@@ -373,6 +373,44 @@ EXPORT_SYMBOL(susfs_get_sid_from_name);
                         f.write(ci_content)
                     print(f"[+] Injected susfs_init() into {ci_c}")
 
+        # G. Fix sucompat.h and sucompat.c signature mismatch on non-GKI 4.19
+        # In Linux 4.19 non-GKI, do_faccessat and vfs_statx pass const char __user **filename_user,
+        # NOT struct filename **filename (which is GKI 5.10+ only).
+        for sc_sub in ["feature/sucompat.h", "kernel/feature/sucompat.h"]:
+            sc_h = os.path.join(ksu_root, sc_sub)
+            if os.path.exists(sc_h):
+                with open(sc_h, 'r', encoding='utf-8', errors='ignore') as f:
+                    sh_content = f.read()
+                if "#include <linux/version.h>" not in sh_content:
+                    sh_content = "#include <linux/version.h>\n" + sh_content
+                sh_content = re.sub(
+                    r'#ifdef\s+CONFIG_KSU_SUSFS\s*\n(\s*int\s+ksu_handle_faccessat\(int\s*\*dfd,\s*struct\s+filename\s*\*\*filename,\s*int\s*\*mode,\s*int\s*\*__unused_flags\);\s*\n\s*int\s+ksu_handle_stat\(int\s*\*dfd,\s*struct\s+filename\s*\*\*filename,\s*int\s*\*flags\);)',
+                    r'#if defined(CONFIG_KSU_SUSFS) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0))\n\1',
+                    sh_content
+                )
+                with open(sc_h, 'w', encoding='utf-8') as f:
+                    f.write(sh_content)
+                print(f"[+] Fixed faccessat & stat prototypes in {sc_h}")
+
+        for sc_sub in ["feature/sucompat.c", "kernel/feature/sucompat.c"]:
+            sc_c = os.path.join(ksu_root, sc_sub)
+            if os.path.exists(sc_c):
+                with open(sc_c, 'r', encoding='utf-8', errors='ignore') as f:
+                    sc_content = f.read()
+                sc_content = re.sub(
+                    r'#ifdef\s+CONFIG_KSU_SUSFS\s*\n(\s*int\s+ksu_handle_faccessat\(int\s*\*dfd,\s*struct\s+filename\s*\*\*filename)',
+                    r'#if defined(CONFIG_KSU_SUSFS) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0))\n\1',
+                    sc_content
+                )
+                sc_content = re.sub(
+                    r'#ifdef\s+CONFIG_KSU_SUSFS\s*\n(\s*int\s+ksu_handle_stat\(int\s*\*dfd,\s*struct\s+filename\s*\*\*filename)',
+                    r'#if defined(CONFIG_KSU_SUSFS) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0))\n\1',
+                    sc_content
+                )
+                with open(sc_c, 'w', encoding='utf-8') as f:
+                    f.write(sc_content)
+                print(f"[+] Fixed faccessat & stat implementations in {sc_c}")
+
     print("[*] All SuSFS v2 and BakaSU fixes applied cleanly and safely!")
 
 if __name__ == "__main__":
