@@ -180,6 +180,8 @@ void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info);
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
 void susfs_start_sdcard_monitor_fn(void);
+extern bool susfs_is_boot_completed_triggered;
+extern bool ksu_execveat_hook;
 
 /* sus_kstat */
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT

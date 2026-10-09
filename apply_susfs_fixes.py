@@ -59,6 +59,13 @@ def main():
         c_content += '''
 /* BakaSU compatibility aliases and stubs */
 #include <linux/workqueue.h>
+#include <linux/export.h>
+
+bool susfs_is_boot_completed_triggered __read_mostly = false;
+EXPORT_SYMBOL(susfs_is_boot_completed_triggered);
+
+bool ksu_execveat_hook __read_mostly = false;
+EXPORT_SYMBOL(ksu_execveat_hook);
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info) {
@@ -67,6 +74,8 @@ void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info) {
 #endif
 
 void susfs_start_sdcard_monitor_fn(void) {
+\tsusfs_is_boot_completed_triggered = true;
+\tpr_info("susfs: boot completed triggered set to true\\n");
 }
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
