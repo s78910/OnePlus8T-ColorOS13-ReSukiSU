@@ -21,7 +21,7 @@ sed -i 's/^EXTRAVERSION =.*/EXTRAVERSION =/' Makefile
 
 # Prevent scripts/setlocalversion from appending extra '+' to vermagic
 echo '#!/bin/sh' > scripts/setlocalversion
-echo 'echo ""' >> scripts/setlocalversion
+echo 'echo "-perf+"' >> scripts/setlocalversion
 chmod +x scripts/setlocalversion
 touch .scmversion
 
