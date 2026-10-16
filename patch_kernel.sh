@@ -27,6 +27,25 @@ if [ -d drivers/kernelsu/.git ]; then
 fi
 
 echo "=========================================="
+echo "2c. Patching OnePlus kernel source anomalies (f2fs.h & futex.c)..."
+echo "=========================================="
+# Fix missing MAX_BLKS_PER_CLUSTER definition in fs/f2fs/f2fs.h
+sed -i 's/^struct compress_ctx {/#ifndef MAX_BLKS_PER_CLUSTER\n#define MAX_BLKS_PER_CLUSTER (1 << 3)\n#endif\n\nstruct compress_ctx {/' fs/f2fs/f2fs.h
+
+# Fix undeclared already_on_hb in kernel/futex.c
+python3 -c "
+with open('kernel/futex.c', 'r') as f: c = f.read()
+target = '#ifdef CONFIG_OPLUS_LOCKING_STRATEGY\n\tbool already_on_hb = false;\n#endif'
+repl = '\tbool already_on_hb = false;'
+if target in c:
+    c = c.replace(target, repl)
+    with open('kernel/futex.c', 'w') as f: f.write(c)
+    print('[+] kernel/futex.c patched successfully')
+else:
+    print('[-] target not found in kernel/futex.c')
+"
+
+echo "=========================================="
 echo "3. Spoofing Stock Version to 4.19.157-perf+..."
 echo "=========================================="
 sed -i 's/^SUBLEVEL =.*/SUBLEVEL = 157/' Makefile
@@ -47,6 +66,13 @@ DEFCONFIG="arch/arm64/configs/stock_defconfig"
 # Camera techpack for OnePlus 8T
 sed -i '$a\CONFIG_TECHPACK_CAMERA_ONEPLUS=y' $DEFCONFIG
 sed -i '/-include oplus_native_features.mk/i\export BRAND_SHOW_FLAG=oneplus' OplusKernelEnvConfig.mk
+
+# Ensure F2FS compression & OPlus locking options are enabled
+echo "CONFIG_F2FS_FS_COMPRESSION=y" >> $DEFCONFIG
+echo "CONFIG_F2FS_FS_COMPRESSION_FIXED_OUTPUT=y" >> $DEFCONFIG
+echo "CONFIG_OPLUS_LOCKING_STRATEGY=y" >> $DEFCONFIG
+echo "CONFIG_OPLUS_LOCKING_MONITOR=y" >> $DEFCONFIG
+echo "CONFIG_OPLUS_LOCKING_OSQ=y" >> $DEFCONFIG
 
 # Disable problematic BTF debugging
 sed -i 's/CONFIG_DEBUG_INFO_BTF=y/# CONFIG_DEBUG_INFO_BTF is not set/g' $DEFCONFIG
