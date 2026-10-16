@@ -70,7 +70,7 @@ jobs:
           chmod +x $GITHUB_WORKSPACE/patch_kernel.sh
           bash $GITHUB_WORKSPACE/patch_kernel.sh
 
-      - name: Build Kernel Image
+      - name: Build Kernel Image & Device Tree
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
           export PATH=$GITHUB_WORKSPACE/clang-custom/bin:$PATH
@@ -91,13 +91,15 @@ jobs:
             CONFIG_TECHPACK_CAMERA_ONEPLUS=y \
             CROSS_COMPILE=$GITHUB_WORKSPACE/gcc-64/bin/aarch64-linux-android- \
             CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/gcc-32/bin/arm-linux-androideabi- \
-            vendor/kona-perf_defconfig
+            stock_defconfig
 
           ./scripts/config --file out/.config --disable CONFIG_DEBUG_INFO_BTF
           ./scripts/config --file out/.config --disable CONFIG_MODULE_SIG
           ./scripts/config --file out/.config --disable CONFIG_MODULE_SIG_FORCE
           ./scripts/config --file out/.config --disable CONFIG_MODULE_SIG_ALL
           ./scripts/config --file out/.config --enable CONFIG_MODULE_FORCE_LOAD
+          ./scripts/config --file out/.config --set-str CONFIG_MODULE_SIG_KEY ""
+          ./scripts/config --file out/.config --set-str CONFIG_SYSTEM_TRUSTED_KEYS ""
           make O=out ARCH=arm64 olddefconfig
 
           echo "=== Verified Kernel Configurations ==="
@@ -113,10 +115,15 @@ jobs:
             CONFIG_TECHPACK_CAMERA_ONEPLUS=y \
             CROSS_COMPILE=$GITHUB_WORKSPACE/gcc-64/bin/aarch64-linux-android- \
             CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/gcc-32/bin/arm-linux-androideabi- \
-            Image dtbs
+            Image dtbs dtb dtbo.img
 
           echo "=== Verified Built Kernel Banner ==="
           strings out/arch/arm64/boot/Image | grep "Linux version" || true
+
+          echo "=== Built Artifacts Listing ==="
+          ls -lh out/arch/arm64/boot/Image || true
+          ls -lh out/arch/arm64/boot/dtb || true
+          ls -lh out/arch/arm64/boot/dtbo.img || true
 
       - name: Package AnyKernel3
         run: |
@@ -132,6 +139,9 @@ jobs:
           if [ -f out/arch/arm64/boot/dtb ]; then
             cp -fp out/arch/arm64/boot/dtb tmp/
           fi
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+            cp -fp out/arch/arm64/boot/dtbo.img tmp/
+          fi
           cp -rp Anykernel3/* tmp/
           cd tmp
           zip -r9 $GITHUB_WORKSPACE/OnePlus8T-ColorOS13-ReSukiSU-AK3.zip * -x .git README.md *placeholder
@@ -141,4 +151,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OnePlus8T-ColorOS13-ReSukiSU-AK3
-          path: OnePlus8T-ColorOS13-ReSukiSU-AK3.zip
+          path: |
+            OnePlus8T-ColorOS13-ReSukiSU-AK3.zip
+            device_kernel/out/arch/arm64/boot/Image
+            device_kernel/out/arch/arm64/boot/dtb
+            device_kernel/out/arch/arm64/boot/dtbo.img

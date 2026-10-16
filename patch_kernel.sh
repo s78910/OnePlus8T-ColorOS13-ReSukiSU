@@ -26,7 +26,6 @@ if [ -d drivers/kernelsu/.git ]; then
     (cd drivers/kernelsu && git config user.email "ci@local" && git config user.name "CI" && git add -A && git commit -m "clean") || true
 fi
 
-
 echo "=========================================="
 echo "3. Spoofing Stock Version to 4.19.157-perf+..."
 echo "=========================================="
@@ -40,9 +39,12 @@ chmod +x scripts/setlocalversion
 touch .scmversion
 
 echo "=========================================="
-echo "4. Applying OnePlus defconfig, Manual Hook & SuSFS flags..."
+echo "4. Applying Golden stock_config, Camera Techpack, Manual Hook & SuSFS flags..."
 echo "=========================================="
-DEFCONFIG="arch/arm64/configs/vendor/kona-perf_defconfig"
+cp $GITHUB_WORKSPACE/stock_config arch/arm64/configs/stock_defconfig
+DEFCONFIG="arch/arm64/configs/stock_defconfig"
+
+# Camera techpack for OnePlus 8T
 sed -i '$a\CONFIG_TECHPACK_CAMERA_ONEPLUS=y' $DEFCONFIG
 sed -i '/-include oplus_native_features.mk/i\export BRAND_SHOW_FLAG=oneplus' OplusKernelEnvConfig.mk
 
@@ -54,6 +56,9 @@ echo "CONFIG_DEBUG_INFO_BTF=n" >> $DEFCONFIG
 sed -i 's/CONFIG_MODULE_SIG=y/# CONFIG_MODULE_SIG is not set/g' $DEFCONFIG
 sed -i 's/CONFIG_MODULE_SIG_FORCE=y/# CONFIG_MODULE_SIG_FORCE is not set/g' $DEFCONFIG
 sed -i 's/CONFIG_MODULE_SIG_ALL=y/# CONFIG_MODULE_SIG_ALL is not set/g' $DEFCONFIG
+sed -i '/CONFIG_MODULE_SIG_KEY/d' $DEFCONFIG
+sed -i '/CONFIG_SYSTEM_TRUSTED_KEYS/d' $DEFCONFIG
+sed -i '/CONFIG_MODULE_FORCE_LOAD/d' $DEFCONFIG
 echo "CONFIG_MODULE_FORCE_LOAD=y" >> $DEFCONFIG
 
 # Ensure exact localversion
@@ -81,5 +86,13 @@ echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> $DEFCONFIG
 echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> $DEFCONFIG
 echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> $DEFCONFIG
 echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> $DEFCONFIG
+
+# Also update vendor/kona-perf_defconfig as backup
+cp arch/arm64/configs/stock_defconfig arch/arm64/configs/vendor/kona-perf_defconfig
+
+echo "=========================================="
+echo "5. Bypassing vendor module CRC & signature checks in kernel/module.c..."
+echo "=========================================="
+python3 $GITHUB_WORKSPACE/patch_module_compat.py $GITHUB_WORKSPACE/device_kernel
 
 echo "[+] patch_kernel.sh completed successfully!"
