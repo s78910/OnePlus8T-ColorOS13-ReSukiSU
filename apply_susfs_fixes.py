@@ -27,19 +27,33 @@ def main():
     if os.path.exists(inc_susfs_def_h):
         with open(inc_susfs_def_h, 'r', encoding='utf-8', errors='ignore') as f:
             def_content = f.read()
-        if "CMD_SUSFS_SHOW_VERSION" not in def_content:
+        if "CMD_SUSFS_ADD_SUS_PATH_LOOP" not in def_content:
             target = "#endif // #ifndef KSU_SUSFS_DEF_H"
             v2_cmds = '''
 /* SuSFS v2 Userspace Protocol Definitions */
+#ifndef CMD_SUSFS_ADD_SUS_PATH_LOOP
+#define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
+#endif
+#ifndef CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS
+#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS 0x55561
+#endif
+#ifndef CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS
+#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS
+#endif
 #ifndef CMD_SUSFS_SHOW_VERSION
 #define CMD_SUSFS_SHOW_VERSION 0x555e1
+#endif
+#ifndef CMD_SUSFS_SHOW_ENABLED_FEATURES
 #define CMD_SUSFS_SHOW_ENABLED_FEATURES 0x555e2
+#endif
+#ifndef CMD_SUSFS_SHOW_VARIANT
 #define CMD_SUSFS_SHOW_VARIANT 0x555e3
+#endif
+#ifndef CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING
 #define CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING 0x60010
+#endif
+#ifndef CMD_SUSFS_ADD_SUS_MAP
 #define CMD_SUSFS_ADD_SUS_MAP 0x60020
-#define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
-#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS 0x55561
-#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS
 #endif
 
 #endif // #ifndef KSU_SUSFS_DEF_H
