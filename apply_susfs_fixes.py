@@ -22,107 +22,41 @@ def main():
     
     print(f"[*] Applying SuSFS v2 & ReSukiSU/BakaSU integration to {kernel_dir}...")
 
-    # 1. Update include/linux/susfs_def.h with v2 CMDs while preserving all native v1.5.5 macros
+    # 1. Update include/linux/susfs_def.h with canonical SuSFS v2 header
     inc_susfs_def_h = os.path.join(kernel_dir, "include", "linux", "susfs_def.h")
-    if os.path.exists(inc_susfs_def_h):
-        with open(inc_susfs_def_h, 'r', encoding='utf-8', errors='ignore') as f:
-            def_content = f.read()
-        if "CMD_SUSFS_ADD_SUS_PATH_LOOP" not in def_content:
-            target = "#endif // #ifndef KSU_SUSFS_DEF_H"
-            v2_cmds = '''
-/* SuSFS v2 Userspace Protocol Definitions */
-#ifndef SUSFS_MAGIC
-#define SUSFS_MAGIC 0xFAFAFAFA
-#endif
-#ifndef CMD_SUSFS_ADD_SUS_PATH_LOOP
-#define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
-#endif
-#ifndef CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS
-#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS 0x55561
-#endif
-#ifndef CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS
-#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS
-#endif
-#ifndef CMD_SUSFS_SHOW_VERSION
-#define CMD_SUSFS_SHOW_VERSION 0x555e1
-#endif
-#ifndef CMD_SUSFS_SHOW_ENABLED_FEATURES
-#define CMD_SUSFS_SHOW_ENABLED_FEATURES 0x555e2
-#endif
-#ifndef CMD_SUSFS_SHOW_VARIANT
-#define CMD_SUSFS_SHOW_VARIANT 0x555e3
-#endif
-#ifndef CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING
-#define CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING 0x60010
-#endif
-#ifndef CMD_SUSFS_ADD_SUS_MAP
-#define CMD_SUSFS_ADD_SUS_MAP 0x60020
-#endif
+    v2_def_source = os.path.join(os.path.dirname(__file__), "zee295_susfs", "susfs-v2", "susfs_def.h")
+    susfs_dir = sys.argv[2] if len(sys.argv) > 2 else "zee295_susfs"
+    if not os.path.exists(v2_def_source):
+        v2_def_source = os.path.join(susfs_dir, "susfs-v2", "susfs_def.h")
+    
+    if os.path.exists(v2_def_source):
+        with open(v2_def_source, 'r', encoding='utf-8') as f_src:
+            def_content = f_src.read()
+        with open(inc_susfs_def_h, 'w', encoding='utf-8') as f_dst:
+            f_dst.write(def_content)
+        print(f"[+] Successfully installed canonical SuSFS v2 header to {inc_susfs_def_h} from {v2_def_source}")
+    else:
+        print(f"[-] Warning: {v2_def_source} not found, could not update {inc_susfs_def_h}")
 
-#endif // #ifndef KSU_SUSFS_DEF_H
-'''
-            if target in def_content:
-                def_content = def_content.replace(target, v2_cmds)
-            else:
-                def_content += v2_cmds
-            with open(inc_susfs_def_h, 'w', encoding='utf-8') as f:
-                f.write(def_content)
-            print("[+] Successfully added SuSFS v2 command definitions to include/linux/susfs_def.h")
-
-    # 2. Update include/linux/susfs.h: set version to v2.0.0 and declare v2 structs & functions
+    # 2. Update include/linux/susfs.h with canonical SuSFS v2 header
     inc_susfs_h = os.path.join(kernel_dir, "include", "linux", "susfs.h")
-    if os.path.exists(inc_susfs_h):
-        with open(inc_susfs_h, 'r', encoding='utf-8', errors='ignore') as f:
-            h_content = f.read()
-        # Spoof version string
-        h_content = re.sub(r'#define\s+SUSFS_VERSION\s+".*"', '#define SUSFS_VERSION "v2.0.0"', h_content)
-        if "SUSFS_VARIANT" not in h_content:
+    v2_h_source = os.path.join(os.path.dirname(__file__), "zee295_susfs", "susfs-v2", "susfs.h")
+    if not os.path.exists(v2_h_source):
+        v2_h_source = os.path.join(susfs_dir, "susfs-v2", "susfs.h")
+    
+    if os.path.exists(v2_h_source):
+        with open(v2_h_source, 'r', encoding='utf-8') as f_src:
+            h_content = f_src.read()
+        if "ksu_vfs_read_hook" not in h_content:
             h_content = h_content.replace(
-                '#define SUSFS_VERSION "v2.0.0"',
-                '#define SUSFS_VERSION "v2.0.0"\n#define SUSFS_VARIANT "NON-GKI"'
+                "extern bool ksu_execveat_hook;",
+                "extern bool ksu_execveat_hook;\nextern bool ksu_vfs_read_hook;"
             )
-        if "st_susfs_version" not in h_content:
-            v2_structs = '''
-/* SuSFS v2 & ReSukiSU Version/Feature Structures */
-#ifndef SUSFS_MAX_VERSION_BUFSIZE
-#define SUSFS_MAX_VERSION_BUFSIZE 16
-#define SUSFS_MAX_VARIANT_BUFSIZE 16
-#define SUSFS_ENABLED_FEATURES_SIZE 8192
-
-struct st_susfs_version {
-\tchar susfs_version[SUSFS_MAX_VERSION_BUFSIZE];
-\tint err;
-};
-
-struct st_susfs_variant {
-\tchar susfs_variant[SUSFS_MAX_VARIANT_BUFSIZE];
-\tint err;
-};
-
-struct st_susfs_enabled_features {
-\tchar enabled_features[SUSFS_ENABLED_FEATURES_SIZE];
-\tint err;
-};
-
-void susfs_show_version(void __user **user_info);
-void susfs_show_variant(void __user **user_info);
-void susfs_get_enabled_features(void __user **user_info);
-void susfs_set_avc_log_spoofing(void __user **user_info);
-void susfs_add_sus_map(void __user **user_info);
-void susfs_add_sus_path_loop(void __user **user_info);
-void susfs_enable_log(void __user **user_info);
-void susfs_start_sdcard_monitor_fn(void);
-void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info);
-#endif
-'''
-            target_h = "#endif // #ifndef KSU_SUSFS_H"
-            if target_h in h_content:
-                h_content = h_content.replace(target_h, v2_structs + "\n" + target_h)
-            else:
-                h_content += v2_structs
-        with open(inc_susfs_h, 'w', encoding='utf-8') as f:
-            f.write(h_content)
-        print("[+] Successfully updated include/linux/susfs.h with v2 version and declarations")
+        with open(inc_susfs_h, 'w', encoding='utf-8') as f_dst:
+            f_dst.write(h_content)
+        print(f"[+] Successfully installed canonical SuSFS v2 header to {inc_susfs_h} from {v2_h_source}")
+    else:
+        print(f"[-] Warning: {v2_h_source} not found, could not update {inc_susfs_h}")
 
     # 3. Add v2 & BakaSU implementations to fs/susfs.c
     fs_susfs_c = os.path.join(kernel_dir, "fs", "susfs.c")
