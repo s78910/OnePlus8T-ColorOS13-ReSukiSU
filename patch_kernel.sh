@@ -55,7 +55,7 @@ DEFCONFIG="arch/arm64/configs/vendor/kona-perf_defconfig"
 
 # Camera techpack for OnePlus 8T
 sed -i '$a\CONFIG_TECHPACK_CAMERA_ONEPLUS=y' $DEFCONFIG
-sed -i '/-include oplus_native_features.mk/i\export BRAND_SHOW_FLAG=oneplus' OplusKernelEnvConfig.mk
+grep -q "export BRAND_SHOW_FLAG=oneplus" OplusKernelEnvConfig.mk || sed -i '/-include oplus_native_features.mk/i\export BRAND_SHOW_FLAG=oneplus' OplusKernelEnvConfig.mk
 
 # Disable problematic BTF debugging
 sed -i 's/CONFIG_DEBUG_INFO_BTF=y/# CONFIG_DEBUG_INFO_BTF is not set/g' $DEFCONFIG
