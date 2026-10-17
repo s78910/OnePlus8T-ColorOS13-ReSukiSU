@@ -31,6 +31,9 @@ def main():
             target = "#endif // #ifndef KSU_SUSFS_DEF_H"
             v2_cmds = '''
 /* SuSFS v2 Userspace Protocol Definitions */
+#ifndef SUSFS_MAGIC
+#define SUSFS_MAGIC 0xFAFAFAFA
+#endif
 #ifndef CMD_SUSFS_ADD_SUS_PATH_LOOP
 #define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
 #endif
