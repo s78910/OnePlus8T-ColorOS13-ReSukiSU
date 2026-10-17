@@ -1,6 +1,8 @@
 import os
 import sys
 import re
+import shutil
+import subprocess
 
 def patch_file(filepath, search_str, replace_str):
     if not os.path.exists(filepath):
@@ -17,177 +19,45 @@ def patch_file(filepath, search_str, replace_str):
     print(f"[+] Successfully patched: {filepath}")
     return True
 
+def apply_patch(kernel_dir, patch_file):
+    if not os.path.exists(patch_file):
+        print(f"[-] Patch file not found: {patch_file}")
+        return False
+    print(f"[*] Applying {os.path.basename(patch_file)}...")
+    ret = subprocess.run(
+        ["patch", "-p1", "--forward", "--ignore-whitespace"],
+        cwd=kernel_dir,
+        input=open(patch_file, 'rb').read(),
+        capture_output=True
+    )
+    print(ret.stdout.decode('utf-8', errors='ignore'))
+    if ret.stderr:
+        print(ret.stderr.decode('utf-8', errors='ignore'))
+    return ret.returncode == 0
+
 def main():
     kernel_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+    zee295_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.join(kernel_dir, "..", "zee295_susfs")
     
-    print(f"[*] Applying SuSFS v2 & ReSukiSU/BakaSU integration to {kernel_dir}...")
+    print(f"[*] Applying SuSFS v2 & BakaSU integration to {kernel_dir}...")
+    print(f"[*] Using SuSFS assets from {zee295_dir}...")
 
-    # 1. Inject SuSFS v2 protocol & inline thread_info helpers into include/linux/susfs_def.h
-    inc_susfs_def_h = os.path.join(kernel_dir, "include", "linux", "susfs_def.h")
-    if os.path.exists(inc_susfs_def_h):
-        with open(inc_susfs_def_h, 'r', encoding='utf-8', errors='ignore') as f:
-            def_content = f.read()
-        if "susfs_is_current_proc_no_su" not in def_content:
-            target = "#endif // #ifndef KSU_SUSFS_DEF_H"
-            v2_injections = '''
-/* SuSFS v2 & ReSukiSU / BakaSU Protocol Extensions */
-#ifndef SUSFS_MAGIC
-#define SUSFS_MAGIC 0xFAFAFAFA
-#endif
-#ifndef CMD_SUSFS_ADD_SUS_PATH_LOOP
-#define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
-#endif
-#ifndef CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS
-#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS 0x55561
-#endif
-#ifndef CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS
-#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS
-#endif
-#ifndef CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING
-#define CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING 0x60010
-#endif
-#ifndef CMD_SUSFS_ADD_SUS_MAP
-#define CMD_SUSFS_ADD_SUS_MAP 0x60020
-#endif
-
-#ifndef INODE_STATE_SUS_PATH
-#define INODE_STATE_SUS_PATH BIT(24)
-#endif
-#ifndef INODE_STATE_SUS_MOUNT
-#define INODE_STATE_SUS_MOUNT BIT(25)
-#endif
-#ifndef INODE_STATE_SUS_KSTAT
-#define INODE_STATE_SUS_KSTAT BIT(26)
-#endif
-#ifndef INODE_STATE_OPEN_REDIRECT
-#define INODE_STATE_OPEN_REDIRECT BIT(27)
-#endif
-#ifndef TASK_STRUCT_NON_ROOT_USER_APP_PROC
-#define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(24)
-#endif
-
-#include <linux/thread_info.h>
-#include <linux/sched.h>
-
-#ifndef TIF_PROC_UMOUNTED
-#define TIF_PROC_UMOUNTED 33
-#define TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT 34
-#define TIF_PROC_NO_SU 35
-#endif
-
-static inline bool susfs_is_current_proc_umounted(void) {
-\treturn test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
-}
-
-static inline void susfs_set_current_proc_umounted(void) {
-\tset_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
-}
-
-static inline void susfs_clear_current_proc_umounted(void) {
-\tclear_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
-}
-
-static inline bool susfs_is_current_proc_umounted_for_zygote_next(void) {
-\treturn test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
-}
-
-static inline void susfs_set_current_proc_umounted_for_zygote_next(void) {
-\tset_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
-}
-
-static inline void susfs_clear_current_proc_umounted_for_zygote_next(void) {
-\tclear_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
-}
-
-static inline bool susfs_is_current_proc_no_su(void) {
-\treturn test_ti_thread_flag(&current->thread_info, TIF_PROC_NO_SU);
-}
-
-static inline void susfs_set_current_proc_no_su(void) {
-\tset_ti_thread_flag(&current->thread_info, TIF_PROC_NO_SU);
-}
-
-static inline void susfs_clear_current_proc_no_su(void) {
-\tclear_ti_thread_flag(&current->thread_info, TIF_PROC_NO_SU);
-}
-
-#endif // #ifndef KSU_SUSFS_DEF_H
-'''
-            if target in def_content:
-                def_content = def_content.replace(target, v2_injections)
-            else:
-                def_content += v2_injections
-            with open(inc_susfs_def_h, 'w', encoding='utf-8') as f:
-                f.write(def_content)
-            print("[+] Successfully injected SuSFS v2 definitions and inline helpers into include/linux/susfs_def.h")
-
-    # 2. Update include/linux/susfs.h: set version to v2.0.0 and declare v2 structs & functions
-    inc_susfs_h = os.path.join(kernel_dir, "include", "linux", "susfs.h")
-    if os.path.exists(inc_susfs_h):
-        with open(inc_susfs_h, 'r', encoding='utf-8', errors='ignore') as f:
-            h_content = f.read()
-        # Spoof version string
-        h_content = re.sub(r'#define\s+SUSFS_VERSION\s+".*"', '#define SUSFS_VERSION "v2.0.0"', h_content)
-        if "susfs_show_version" not in h_content:
-            v2_structs = '''
-/* SuSFS v2 & ReSukiSU Version/Feature Structures */
-#ifndef SUSFS_MAX_VERSION_BUFSIZE
-#define SUSFS_MAX_VERSION_BUFSIZE 16
-#define SUSFS_MAX_VARIANT_BUFSIZE 16
-#define SUSFS_ENABLED_FEATURES_SIZE 8192
-#endif
-
-#ifndef CMD_SUSFS_SHOW_VERSION_STRUCT
-#define CMD_SUSFS_SHOW_VERSION_STRUCT
-struct st_susfs_version {
-\tchar susfs_version[SUSFS_MAX_VERSION_BUFSIZE];
-\tint err;
-};
-
-struct st_susfs_variant {
-\tchar susfs_variant[SUSFS_MAX_VARIANT_BUFSIZE];
-\tint err;
-};
-
-struct st_susfs_enabled_features {
-\tchar enabled_features[SUSFS_ENABLED_FEATURES_SIZE];
-\tint err;
-};
-
-void susfs_show_version(void __user **user_info);
-void susfs_show_variant(void __user **user_info);
-void susfs_get_enabled_features(void __user **user_info);
-void susfs_set_avc_log_spoofing(void __user **user_info);
-void susfs_add_sus_map(void __user **user_info);
-void susfs_add_sus_path_loop(void __user **user_info);
-void susfs_enable_log(void __user **user_info);
-void susfs_start_sdcard_monitor_fn(void);
-void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info);
-extern bool susfs_is_boot_completed_triggered;
-extern bool ksu_execveat_hook;
-extern bool ksu_vfs_read_hook;
-#endif
-'''
-            target_h = "#endif // #ifndef KSU_SUSFS_H"
-            if target_h in h_content:
-                h_content = h_content.replace(target_h, v2_structs + "\n" + target_h)
-            elif "#endif" in h_content:
-                idx = h_content.rfind("#endif")
-                h_content = h_content[:idx] + v2_structs + "\n#endif\n"
-            else:
-                h_content += v2_structs
-        with open(inc_susfs_h, 'w', encoding='utf-8') as f:
-            f.write(h_content)
-        print("[+] Successfully updated include/linux/susfs.h with v2 version and declarations")
-
-    # 3. Add v2 & BakaSU implementations to fs/susfs.c
+    # 1. Copy SuSFS source files to kernel
     fs_susfs_c = os.path.join(kernel_dir, "fs", "susfs.c")
-    if os.path.exists(fs_susfs_c):
-        with open(fs_susfs_c, 'r', encoding='utf-8', errors='ignore') as f:
-            c_content = f.read()
-        if "susfs_show_version" not in c_content:
-            c_content += '''
-/* BakaSU and ReSukiSU Manager compatibility & SuSFS v2 implementations */
+    inc_susfs_h = os.path.join(kernel_dir, "include", "linux", "susfs.h")
+    inc_susfs_def_h = os.path.join(kernel_dir, "include", "linux", "susfs_def.h")
+
+    shutil.copyfile(os.path.join(zee295_dir, "susfs-v2", "susfs.c"), fs_susfs_c)
+    shutil.copyfile(os.path.join(zee295_dir, "susfs-v2", "susfs.h"), inc_susfs_h)
+    shutil.copyfile(os.path.join(zee295_dir, "susfs-v2", "susfs_def.h"), inc_susfs_def_h)
+    print("[+] Copied susfs.c, susfs.h, and susfs_def.h")
+
+    # 2. Add aliases and stubs in fs/susfs.c
+    with open(fs_susfs_c, 'r', encoding='utf-8', errors='ignore') as f:
+        c_content = f.read()
+    if "susfs_set_hide_sus_mnts_for_non_su_procs" not in c_content:
+        c_content += '''
+/* BakaSU compatibility aliases and stubs */
 #include <linux/workqueue.h>
 #include <linux/export.h>
 
@@ -197,12 +67,9 @@ EXPORT_SYMBOL(susfs_is_boot_completed_triggered);
 bool ksu_execveat_hook __read_mostly = false;
 EXPORT_SYMBOL(ksu_execveat_hook);
 
-bool ksu_vfs_read_hook __read_mostly = false;
-EXPORT_SYMBOL(ksu_vfs_read_hook);
-
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info) {
-\tpr_info("susfs: set_hide_sus_mnts_for_non_su_procs called\\n");
+\tsusfs_set_hide_sus_mnts_for_all_procs(user_info);
 }
 #endif
 
@@ -211,87 +78,111 @@ void susfs_start_sdcard_monitor_fn(void) {
 \tpr_info("susfs: boot completed triggered set to true\\n");
 }
 
-static void susfs_run_extra_works(struct work_struct *work) {
-}
-DECLARE_WORK(susfs_extra_works, susfs_run_extra_works);
-
-void susfs_show_version(void __user **user_info) {
-\tstruct st_susfs_version info = {0};
-\tif (copy_from_user(&info, (struct st_susfs_version __user*)*user_info, sizeof(info))) {
-\t\tinfo.err = -EFAULT;
-\t\tgoto out_copy_version;
-\t}
-\tstrncpy(info.susfs_version, "v2.0.0", sizeof(info.susfs_version) - 1);
-\tinfo.err = 0;
-out_copy_version:
-\tif (copy_to_user((struct st_susfs_version __user*)*user_info, &info, sizeof(info))) {
-\t\tinfo.err = -EFAULT;
-\t}
-\tSUSFS_LOGI("CMD_SUSFS_SHOW_VERSION -> ret: %d\\n", info.err);
-}
-
-void susfs_show_variant(void __user **user_info) {
-\tstruct st_susfs_variant info = {0};
-\tif (copy_from_user(&info, (struct st_susfs_variant __user*)*user_info, sizeof(info))) {
-\t\tinfo.err = -EFAULT;
-\t\tgoto out_copy_variant;
-\t}
-\tstrncpy(info.susfs_variant, "NON-GKI", sizeof(info.susfs_variant) - 1);
-\tinfo.err = 0;
-out_copy_variant:
-\tif (copy_to_user((struct st_susfs_variant __user*)*user_info, &info, sizeof(info))) {
-\t\tinfo.err = -EFAULT;
-\t}
-\tSUSFS_LOGI("CMD_SUSFS_SHOW_VARIANT -> ret: %d\\n", info.err);
-}
-
-void susfs_get_enabled_features(void __user **user_info) {
-\tstruct st_susfs_enabled_features *info = kzalloc(sizeof(struct st_susfs_enabled_features), GFP_KERNEL);
-\tif (!info) {
-\t\treturn;
-\t}
-\tstrlcpy(info->enabled_features,
-\t\t"CONFIG_KSU_SUSFS\\n"
-\t\t"CONFIG_KSU_SUSFS_SUS_PATH\\n"
-\t\t"CONFIG_KSU_SUSFS_SUS_MOUNT\\n"
-\t\t"CONFIG_KSU_SUSFS_SUS_KSTAT\\n"
-\t\t"CONFIG_KSU_SUSFS_SPOOF_UNAME\\n"
-\t\t"CONFIG_KSU_SUSFS_ENABLE_LOG\\n"
-\t\t"CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS\\n"
-\t\t"CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\\n"
-\t\t"CONFIG_KSU_SUSFS_OPEN_REDIRECT\\n"
-\t\t"CONFIG_KSU_SUSFS_SUS_MAP\\n",
-\t\tsizeof(info->enabled_features));
-\tinfo->err = 0;
-\tif (copy_to_user((struct st_susfs_enabled_features __user*)*user_info, info, sizeof(struct st_susfs_enabled_features))) {
-\t\tinfo->err = -EFAULT;
-\t}
-\tkfree(info);
-}
-
-void susfs_set_avc_log_spoofing(void __user **user_info) {
-}
-
-void susfs_add_sus_map(void __user **user_info) {
-}
-
-void susfs_add_sus_path_loop(void __user **user_info) {
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-\tsusfs_add_sus_path((struct st_susfs_sus_path* __user)*user_info);
+extern void susfs_run_sus_path_loop(uid_t uid);
+#endif
+
+static void susfs_run_extra_works(struct work_struct *work) {
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tsusfs_run_sus_path_loop(0);
 #endif
 }
 
-void susfs_enable_log(void __user **user_info) {
-#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
-\tsusfs_set_log(true);
-#endif
-}
+DECLARE_WORK(susfs_extra_works, susfs_run_extra_works);
 '''
-            with open(fs_susfs_c, 'w', encoding='utf-8') as f:
-                f.write(c_content)
-            print("[+] Successfully added SuSFS v2 and BakaSU stubs to fs/susfs.c")
+        with open(fs_susfs_c, 'w', encoding='utf-8') as f:
+            f.write(c_content)
+        print("[+] Added BakaSU compatibility aliases, stubs & susfs_extra_works to fs/susfs.c")
 
-    # 4. Backport get_cred_rcu in include/linux/cred.h
+    # 3. Add to fs/Makefile
+    fs_makefile = os.path.join(kernel_dir, "fs", "Makefile")
+    if os.path.exists(fs_makefile):
+        with open(fs_makefile, 'r', encoding='utf-8', errors='ignore') as f:
+            mf = f.read()
+        if "susfs.o" not in mf:
+            with open(fs_makefile, 'a', encoding='utf-8') as f:
+                f.write("\nobj-$(CONFIG_KSU_SUSFS) += susfs.o\n")
+            print("[+] Added obj-$(CONFIG_KSU_SUSFS) += susfs.o to fs/Makefile")
+
+    # 4. Pre-inject Hunk 1 declarations into fs/namespace.c (avoids OPLUS macro conflict)
+    ns_c = os.path.join(kernel_dir, "fs", "namespace.c")
+    if os.path.exists(ns_c):
+        with open(ns_c, 'r', encoding='utf-8', errors='ignore') as f:
+            ns_content = f.read()
+        if "DEFINE_IDA(susfs_ksu_mnt_group_ida)" not in ns_content:
+            target = '#include "internal.h"'
+            inject = '''#include "internal.h"
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#include <linux/susfs_def.h>
+extern bool susfs_is_current_ksu_domain(void);
+extern bool susfs_is_boot_completed_triggered;
+
+static DEFINE_IDA(susfs_ksu_mnt_group_ida);
+static atomic64_t susfs_ksu_mounts = ATOMIC64_INIT(0);
+
+#define CL_COPY_MNT_NS BIT(25)
+#endif'''
+            patch_file(ns_c, target, inject)
+
+    # 4b. Pre-inject declarations into fs/proc/task_mmu.c
+    tm_c = os.path.join(kernel_dir, "fs", "proc", "task_mmu.c")
+    if os.path.exists(tm_c):
+        with open(tm_c, 'r', encoding='utf-8', errors='ignore') as f:
+            tm_content = f.read()
+        if "linux/susfs_def.h" not in tm_content:
+            target = '#include <linux/ctype.h>'
+            inject = '''#include <linux/ctype.h>
+#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP)
+#include <linux/susfs_def.h>
+#endif'''
+            patch_file(tm_c, target, inject)
+
+    # 5. Prepare 01_add_susfs_hooks.patch with Hunk 1s removed (so patch succeeds 100%)
+    p01_src = os.path.join(zee295_dir, "susfs-patches", "01_add_susfs_hooks.patch")
+    with open(p01_src, 'r', encoding='utf-8', errors='ignore') as f:
+        p01_text = f.read()
+
+    # Locate and omit Hunk 1 of fs/namespace.c
+    h1_tag = '@@ -26,10 +26,23 @@'
+    h2_tag = '@@ -108,6 +121,18 @@'
+    idx1 = p01_text.find(h1_tag)
+    idx2 = p01_text.find(h2_tag)
+    if idx1 != -1 and idx2 != -1:
+        p01_text = p01_text[:idx1] + p01_text[idx2:]
+        print("[+] Omitted pre-injected Hunk 1 of fs/namespace.c from 01_add_susfs_hooks.patch")
+
+    # Locate and omit Hunk 1 of fs/proc/task_mmu.c
+    tm_h1_tag = '@@ -21,6 +21,9 @@'
+    tm_h2_tag = '@@ -348,6 +351,10 @@'
+    tm_idx1 = p01_text.find(tm_h1_tag)
+    tm_idx2 = p01_text.find(tm_h2_tag)
+    if tm_idx1 != -1 and tm_idx2 != -1:
+        p01_text = p01_text[:tm_idx1] + p01_text[tm_idx2:]
+        print("[+] Omitted pre-injected Hunk 1 of fs/proc/task_mmu.c from 01_add_susfs_hooks.patch")
+
+    p01_tmp = os.path.join(kernel_dir, "01_temp.patch")
+    with open(p01_tmp, 'w', encoding='utf-8') as f:
+        f.write(p01_text)
+
+    apply_patch(kernel_dir, p01_tmp)
+    os.remove(p01_tmp)
+
+    # 6. Apply 02_add_susfs_misc.patch
+    p02 = os.path.join(zee295_dir, "susfs-patches", "02_add_susfs_misc.patch")
+    apply_patch(kernel_dir, p02)
+
+    # 7. Apply 03_fix_exec.patch (if needed)
+    p03 = os.path.join(zee295_dir, "susfs-patches", "03_fix_exec.patch")
+    apply_patch(kernel_dir, p03)
+
+    # Clean up any patch backup/reject files
+    for root, dirs, files in os.walk(kernel_dir):
+        for file in files:
+            if file.endswith('.orig') or file.endswith('.rej'):
+                os.remove(os.path.join(root, file))
+
+    # 9. Backport get_cred_rcu in include/linux/cred.h
     cred_h = os.path.join(kernel_dir, "include", "linux", "cred.h")
     if os.path.exists(cred_h):
         with open(cred_h, 'r', encoding='utf-8', errors='ignore') as f:
@@ -318,7 +209,7 @@ static inline const struct cred *get_cred_rcu(const struct cred *cred)
                 f.write(cred_content)
             print("[+] Successfully added get_cred_rcu backport to include/linux/cred.h")
 
-    # 5. Hook kernel/reboot.c for SuSFS / ksud supercalls
+    # 10. Hook kernel/reboot.c for SuSFS / ksud supercalls
     reboot_c = os.path.join(kernel_dir, "kernel", "reboot.c")
     if os.path.exists(reboot_c):
         with open(reboot_c, 'r', encoding='utf-8', errors='ignore') as f:
@@ -341,43 +232,12 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,'''
                 f.write(reb_content)
             print("[+] Successfully hooked kernel/reboot.c for SuSFS supercalls")
 
-    # 5b. Clean up obsolete ksu_vfs_read_hook in fs/read_write.c
-    rw_c = os.path.join(kernel_dir, "fs", "read_write.c")
-    if os.path.exists(rw_c):
-        with open(rw_c, 'r', encoding='utf-8', errors='ignore') as f:
-            rw_content = f.read()
-        target_decl = '''#ifdef CONFIG_KSU
-extern bool ksu_vfs_read_hook __read_mostly;
-extern int ksu_handle_sys_read(unsigned int fd, char __user **buf_ptr,
-\t\t\tsize_t *count_ptr);
-#endif'''
-        target_call = '''#ifdef CONFIG_KSU
-\tif (unlikely(ksu_vfs_read_hook)) 
-\t\tksu_handle_sys_read(fd, &buf, &count);
-#endif'''
-        if target_decl in rw_content:
-            rw_content = rw_content.replace(target_decl, "")
-        if target_call in rw_content:
-            rw_content = rw_content.replace(target_call, "")
-        with open(rw_c, 'w', encoding='utf-8') as f:
-            f.write(rw_content)
-        print("[+] Cleaned up obsolete ksu_vfs_read_hook in fs/read_write.c")
-
-    # 6. BakaSU integration: selinux.c, rules.c, sucompat.c, Kconfig, ksud_integration.c, core/init.c
+    # 11. BakaSU integration: selinux.c, rules.c, sucompat.c, Kconfig, ksud_integration.c, core/init.c
     for ksu_root in [os.path.join(kernel_dir, "drivers", "kernelsu"), os.path.join(kernel_dir, "KernelSU", "kernel")]:
         if not os.path.exists(ksu_root):
             continue
 
         print(f"[*] Applying BakaSU & SuSFS integration to {ksu_root}...")
-
-        # Neutralize any hook_check.mk assertion files so custom manual hooks compile cleanly
-        for r_dir, dirs, files in os.walk(ksu_root):
-            for file in files:
-                if file.endswith("hook_check.mk"):
-                    hook_mk = os.path.join(r_dir, file)
-                    with open(hook_mk, 'w', encoding='utf-8') as f:
-                        f.write("# Bypassed for custom stable manual hooks\n")
-                    print(f"[+] Bypassed hook assertion check in {hook_mk}")
 
         # A. drivers/kernelsu/selinux/selinux.c: Protected SID definitions
         selinux_c = os.path.join(ksu_root, "selinux", "selinux.c")
@@ -449,7 +309,10 @@ EXPORT_SYMBOL(susfs_get_sid_from_name);
                     f.write(sel_content)
                 print(f"[+] Added protected SuSFS SID implementations to {selinux_c}")
 
-        # B. Decouple KSU_SUSFS from hook choice in Kconfig
+        # Note: BakaSU already handles SID caching via cache_sid() and already exports
+        # __ksu_is_allow_uid_for_current in policy/allowlist.c
+
+        # D. Decouple KSU_SUSFS from hook choice in Kconfig
         kconfig_path = os.path.join(ksu_root, "Kconfig")
         if os.path.exists(kconfig_path):
             with open(kconfig_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -462,7 +325,7 @@ EXPORT_SYMBOL(susfs_get_sid_from_name);
                     f.write(k_content)
                 print(f"[+] Successfully decoupled KSU_SUSFS from hook choice in {kconfig_path}")
 
-        # C. Export ksu_init_rc_hook and ksu_input_hook in ksud_integration.c
+        # E. Export ksu_init_rc_hook and ksu_input_hook in ksud_integration.c
         for ksud_sub in ["runtime/ksud_integration.c", "kernel/runtime/ksud_integration.c"]:
             ksud_c = os.path.join(ksu_root, ksud_sub)
             if os.path.exists(ksud_c):
@@ -494,7 +357,7 @@ EXPORT_SYMBOL(susfs_get_sid_from_name);
                     f.write(k_content)
                 print(f"[+] Exported manual hook symbols in {ksud_c}")
 
-        # D. Call susfs_init() in core/init.c under MANUAL_HOOK
+        # F. Call susfs_init() in core/init.c under MANUAL_HOOK
         for ci_sub in ["core/init.c", "core_init.c", "kernel/core_init.c"]:
             ci_c = os.path.join(ksu_root, ci_sub)
             if os.path.exists(ci_c):
@@ -510,7 +373,9 @@ EXPORT_SYMBOL(susfs_get_sid_from_name);
                         f.write(ci_content)
                     print(f"[+] Injected susfs_init() into {ci_c}")
 
-        # E. Fix sucompat.h and sucompat.c signature mismatch on non-GKI 4.19
+        # G. Fix sucompat.h and sucompat.c signature mismatch on non-GKI 4.19
+        # In Linux 4.19 non-GKI, do_faccessat and vfs_statx pass const char __user **filename_user,
+        # NOT struct filename **filename (which is GKI 5.10+ only).
         for sc_sub in ["feature/sucompat.h", "kernel/feature/sucompat.h"]:
             sc_h = os.path.join(ksu_root, sc_sub)
             if os.path.exists(sc_h):
@@ -546,7 +411,7 @@ EXPORT_SYMBOL(susfs_get_sid_from_name);
                     f.write(sc_content)
                 print(f"[+] Fixed faccessat & stat implementations in {sc_c}")
 
-    print("[*] All SuSFS v2 and ReSukiSU/BakaSU fixes applied cleanly and safely!")
+    print("[*] All SuSFS v2 and BakaSU fixes applied cleanly and safely!")
 
 if __name__ == "__main__":
     main()

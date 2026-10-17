@@ -62,15 +62,6 @@ grep -q "export BRAND_SHOW_FLAG=oneplus" OplusKernelEnvConfig.mk || sed -i '/-in
 sed -i 's/CONFIG_DEBUG_INFO_BTF=y/# CONFIG_DEBUG_INFO_BTF is not set/g' $DEFCONFIG
 echo "CONFIG_DEBUG_INFO_BTF=n" >> $DEFCONFIG
 
-# Disable module signature enforcement so prebuilt vendor .ko modules load without signature rejection
-sed -i 's/CONFIG_MODULE_SIG=y/# CONFIG_MODULE_SIG is not set/g' $DEFCONFIG
-sed -i 's/CONFIG_MODULE_SIG_FORCE=y/# CONFIG_MODULE_SIG_FORCE is not set/g' $DEFCONFIG
-sed -i 's/CONFIG_MODULE_SIG_ALL=y/# CONFIG_MODULE_SIG_ALL is not set/g' $DEFCONFIG
-sed -i '/CONFIG_MODULE_SIG_KEY/d' $DEFCONFIG
-sed -i '/CONFIG_SYSTEM_TRUSTED_KEYS/d' $DEFCONFIG
-sed -i '/CONFIG_MODULE_FORCE_LOAD/d' $DEFCONFIG
-echo "CONFIG_MODULE_FORCE_LOAD=y" >> $DEFCONFIG
-
 # Ensure exact localversion
 sed -i '/CONFIG_LOCALVERSION/d' $DEFCONFIG
 echo 'CONFIG_LOCALVERSION="-perf+"' >> $DEFCONFIG
