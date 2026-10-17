@@ -54,13 +54,15 @@ echo "4. Applying OnePlus defconfig, Camera Techpack, Manual Hook & SuSFS flags.
 echo "=========================================="
 DEFCONFIG="arch/arm64/configs/vendor/kona-perf_defconfig"
 
-# Camera techpack for OnePlus 8T
-sed -i '$a\CONFIG_TECHPACK_CAMERA_ONEPLUS=y' $DEFCONFIG
-grep -q "export BRAND_SHOW_FLAG=oneplus" OplusKernelEnvConfig.mk || sed -i '/-include oplus_native_features.mk/i\export BRAND_SHOW_FLAG=oneplus' OplusKernelEnvConfig.mk
-
 # Disable problematic BTF debugging
 sed -i 's/CONFIG_DEBUG_INFO_BTF=y/# CONFIG_DEBUG_INFO_BTF is not set/g' $DEFCONFIG
 echo "CONFIG_DEBUG_INFO_BTF=n" >> $DEFCONFIG
+
+# Disable module signature enforcement so prebuilt vendor .ko modules load without signature rejection
+sed -i 's/CONFIG_MODULE_SIG=y/# CONFIG_MODULE_SIG is not set/g' $DEFCONFIG
+sed -i 's/CONFIG_MODULE_SIG_FORCE=y/# CONFIG_MODULE_SIG_FORCE is not set/g' $DEFCONFIG
+sed -i 's/CONFIG_MODULE_SIG_ALL=y/# CONFIG_MODULE_SIG_ALL is not set/g' $DEFCONFIG
+echo "CONFIG_MODULE_FORCE_LOAD=y" >> $DEFCONFIG
 
 # Ensure exact localversion
 sed -i '/CONFIG_LOCALVERSION/d' $DEFCONFIG
@@ -87,10 +89,5 @@ echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> $DEFCONFIG
 echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> $DEFCONFIG
 echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> $DEFCONFIG
 echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> $DEFCONFIG
-
-echo "=========================================="
-echo "5. Bypassing vendor module CRC & signature checks in kernel/module.c..."
-echo "=========================================="
-python3 $GITHUB_WORKSPACE/patch_module_compat.py $GITHUB_WORKSPACE/device_kernel
 
 echo "[+] patch_kernel.sh completed successfully!"
