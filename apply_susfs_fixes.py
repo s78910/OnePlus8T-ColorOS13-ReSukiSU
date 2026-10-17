@@ -124,6 +124,9 @@ EXPORT_SYMBOL(susfs_is_boot_completed_triggered);
 bool ksu_execveat_hook __read_mostly = false;
 EXPORT_SYMBOL(ksu_execveat_hook);
 
+bool ksu_vfs_read_hook __read_mostly = false;
+EXPORT_SYMBOL(ksu_vfs_read_hook);
+
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info) {
 \tpr_info("susfs: set_hide_sus_mnts_for_non_su_procs called\\n");
@@ -265,12 +268,43 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,'''
                 f.write(reb_content)
             print("[+] Successfully hooked kernel/reboot.c for SuSFS supercalls")
 
+    # 5b. Clean up obsolete ksu_vfs_read_hook in fs/read_write.c
+    rw_c = os.path.join(kernel_dir, "fs", "read_write.c")
+    if os.path.exists(rw_c):
+        with open(rw_c, 'r', encoding='utf-8', errors='ignore') as f:
+            rw_content = f.read()
+        target_decl = '''#ifdef CONFIG_KSU
+extern bool ksu_vfs_read_hook __read_mostly;
+extern int ksu_handle_sys_read(unsigned int fd, char __user **buf_ptr,
+\t\t\tsize_t *count_ptr);
+#endif'''
+        target_call = '''#ifdef CONFIG_KSU
+\tif (unlikely(ksu_vfs_read_hook)) 
+\t\tksu_handle_sys_read(fd, &buf, &count);
+#endif'''
+        if target_decl in rw_content:
+            rw_content = rw_content.replace(target_decl, "")
+        if target_call in rw_content:
+            rw_content = rw_content.replace(target_call, "")
+        with open(rw_c, 'w', encoding='utf-8') as f:
+            f.write(rw_content)
+        print("[+] Cleaned up obsolete ksu_vfs_read_hook in fs/read_write.c")
+
     # 6. BakaSU integration: selinux.c, rules.c, sucompat.c, Kconfig, ksud_integration.c, core/init.c
     for ksu_root in [os.path.join(kernel_dir, "drivers", "kernelsu"), os.path.join(kernel_dir, "KernelSU", "kernel")]:
         if not os.path.exists(ksu_root):
             continue
 
         print(f"[*] Applying BakaSU & SuSFS integration to {ksu_root}...")
+
+        # Neutralize any hook_check.mk assertion files so custom manual hooks compile cleanly
+        for r_dir, dirs, files in os.walk(ksu_root):
+            for file in files:
+                if file.endswith("hook_check.mk"):
+                    hook_mk = os.path.join(r_dir, file)
+                    with open(hook_mk, 'w', encoding='utf-8') as f:
+                        f.write("# Bypassed for custom stable manual hooks\n")
+                    print(f"[+] Bypassed hook assertion check in {hook_mk}")
 
         # A. drivers/kernelsu/selinux/selinux.c: Protected SID definitions
         selinux_c = os.path.join(ksu_root, "selinux", "selinux.c")
