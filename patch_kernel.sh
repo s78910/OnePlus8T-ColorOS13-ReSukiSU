@@ -97,4 +97,9 @@ echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> $DEFCONFIG
 echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> $DEFCONFIG
 echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> $DEFCONFIG
 
+echo "=========================================="
+echo "5. Bypassing vendor module CRC & signature checks in kernel/module.c..."
+echo "=========================================="
+python3 $GITHUB_WORKSPACE/patch_module_compat.py $GITHUB_WORKSPACE/device_kernel
+
 echo "[+] patch_kernel.sh completed successfully!"

@@ -63,7 +63,7 @@ jobs:
       - name: Clone kernel source
         run: |
           cd $GITHUB_WORKSPACE
-          git clone --depth=1 -b op8t https://github.com/toraidl/android_kernel_oneplus_sm8250.git device_kernel
+          git clone --depth=1 -b bpf-5.15-backport https://github.com/toraidl/android_kernel_oneplus_sm8250.git device_kernel
 
       - name: Integrate SuSFS, ReSukiSU & Syscall Hooks
         run: |
