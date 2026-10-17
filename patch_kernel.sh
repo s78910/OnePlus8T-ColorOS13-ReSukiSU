@@ -27,6 +27,16 @@ if [ -d drivers/kernelsu/.git ]; then
 fi
 
 echo "=========================================="
+echo "2c. Replacing Python 2 gcc-wrapper.py with Python 3 passthrough..."
+echo "=========================================="
+cat << 'EOF' > scripts/gcc-wrapper.py
+#!/usr/bin/env python3
+import sys, subprocess
+sys.exit(subprocess.run(sys.argv[1:]).returncode)
+EOF
+chmod +x scripts/gcc-wrapper.py
+
+echo "=========================================="
 echo "3. Spoofing Stock Version to 4.19.157-perf+..."
 echo "=========================================="
 sed -i 's/^SUBLEVEL =.*/SUBLEVEL = 157/' Makefile
