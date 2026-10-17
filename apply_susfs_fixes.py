@@ -99,11 +99,6 @@ static inline void susfs_clear_current_proc_umounted_for_zygote_next(void) {
 \tclear_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
 }
 
-static inline bool susfs_is_current_proc_umounted_app(void) {
-\treturn (test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) &&
-\t\t\tcurrent_uid().val >= 10000);
-}
-
 static inline bool susfs_is_current_proc_no_su(void) {
 \treturn test_ti_thread_flag(&current->thread_info, TIF_PROC_NO_SU);
 }
