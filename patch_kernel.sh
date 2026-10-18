@@ -83,6 +83,33 @@ else:
 PYEOF
 
 echo "=========================================="
+echo "3c. Adding missing stub for hdd_debugfs_process_mib_stats when CONFIG_DEBUG_FS=n..."
+echo "=========================================="
+python3 - << 'PYEOF'
+import os
+
+mibstat_header = "drivers/staging/qcacld-3.0/core/hdd/inc/wlan_hdd_debugfs_mibstat.h"
+if os.path.exists(mibstat_header):
+    with open(mibstat_header, "r", encoding="utf-8", errors="ignore") as f:
+        c = f.read()
+    target_mib = "#else\nstatic inline int wlan_hdd_create_mib_stats_file"
+    replacement_mib = """#else
+static inline void hdd_debugfs_process_mib_stats(struct hdd_adapter *adapter,
+						 struct stats_event *stats)
+{
+}
+
+static inline int wlan_hdd_create_mib_stats_file"""
+    if target_mib in c:
+        c = c.replace(target_mib, replacement_mib, 1)
+        with open(mibstat_header, "w", encoding="utf-8") as f:
+            f.write(c)
+        print("[+] Successfully patched wlan_hdd_debugfs_mibstat.h stub")
+    else:
+        print("[*] Target block in wlan_hdd_debugfs_mibstat.h not matched, checking if already patched...")
+PYEOF
+
+echo "=========================================="
 echo "4. Applying OnePlus defconfig, Camera Techpack, Manual Hook & SuSFS flags..."
 echo "=========================================="
 DEFCONFIG="arch/arm64/configs/vendor/kona-perf_defconfig"
