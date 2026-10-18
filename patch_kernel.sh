@@ -50,6 +50,39 @@ chmod +x scripts/setlocalversion
 touch .scmversion
 
 echo "=========================================="
+echo "3b. Fixing PM8008 regulator 16-bit reg parsing for ColorOS 13 DTB..."
+echo "=========================================="
+python3 - << 'PYEOF'
+import re
+
+file_path = "drivers/regulator/qcom_pm8008-regulator.c"
+with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+    content = f.read()
+
+pattern = r'(\s*rc = of_property_read_u32\(reg_node, "reg", &base\);[\s\S]*?pm8008_reg->base = base;)'
+m = re.search(pattern, content)
+if m:
+    replacement = """\trc = of_property_read_u32(reg_node, "reg", &base);
+\tif (rc < 0) {
+\t\tu16 base16 = 0;
+\t\trc = of_property_read_u16(reg_node, "reg", &base16);
+\t\tif (rc < 0) {
+\t\t\tpr_err("%s: failed to get regulator base rc=%d\\n", name, rc);
+\t\t\treturn rc;
+\t\t}
+\t\tbase = base16;
+\t}
+\tpm8008_reg->base = base;"""
+    content = content[:m.start(1)] + replacement + content[m.end(1):]
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("[+] Successfully patched qcom_pm8008-regulator.c to support 16-bit reg")
+else:
+    print("[-] ERROR: Target block not found in qcom_pm8008-regulator.c")
+    exit(1)
+PYEOF
+
+echo "=========================================="
 echo "4. Applying OnePlus defconfig, Camera Techpack, Manual Hook & SuSFS flags..."
 echo "=========================================="
 DEFCONFIG="arch/arm64/configs/vendor/kona-perf_defconfig"
@@ -57,6 +90,10 @@ DEFCONFIG="arch/arm64/configs/vendor/kona-perf_defconfig"
 # Disable problematic BTF debugging
 sed -i 's/CONFIG_DEBUG_INFO_BTF=y/# CONFIG_DEBUG_INFO_BTF is not set/g' $DEFCONFIG
 echo "CONFIG_DEBUG_INFO_BTF=n" >> $DEFCONFIG
+
+# Disable CONFIG_DEBUG_FS to pass Android 13 VINTF check and eliminate "您的设备内部出现了问题" warning popup
+sed -i 's/CONFIG_DEBUG_FS=y/# CONFIG_DEBUG_FS is not set/g' $DEFCONFIG
+echo "CONFIG_DEBUG_FS=n" >> $DEFCONFIG
 
 # Disable module signature enforcement so prebuilt vendor .ko modules load without signature rejection
 sed -i 's/CONFIG_MODULE_SIG=y/# CONFIG_MODULE_SIG is not set/g' $DEFCONFIG
