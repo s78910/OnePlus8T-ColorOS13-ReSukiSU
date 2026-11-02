@@ -411,6 +411,49 @@ EXPORT_SYMBOL(susfs_get_sid_from_name);
                     f.write(sc_content)
                 print(f"[+] Fixed faccessat & stat implementations in {sc_c}")
 
+        # H. Fix preinit.h void return bug and 4.19 Kbuild compatibility in BakaSU 35257+
+        for pi_sub in ["preinit/preinit.h", "kernel/preinit/preinit.h"]:
+            pi_h = os.path.join(ksu_root, pi_sub)
+            if os.path.exists(pi_h):
+                with open(pi_h, 'r', encoding='utf-8', errors='ignore') as f:
+                    pi_content = f.read()
+                pi_content = re.sub(
+                    r'(static\s+inline\s+void\s+ksu_preinit_handle_execve_manual\([^\)]*\)\s*\{\s*)return\s+false;',
+                    r'\1return;',
+                    pi_content
+                )
+                with open(pi_h, 'w', encoding='utf-8') as f:
+                    f.write(pi_content)
+                print(f"[+] Fixed void return in {pi_h}")
+
+        for sn_sub in ["tools/code_generation/syscall_no/syscall_no.mk", "kernel/tools/code_generation/syscall_no/syscall_no.mk"]:
+            sn_mk = os.path.join(ksu_root, sn_sub)
+            if os.path.exists(sn_mk):
+                with open(sn_mk, 'r', encoding='utf-8', errors='ignore') as f:
+                    sn_content = f.read()
+                if "always += compat/syscall_no.h" not in sn_content:
+                    sn_content = sn_content.replace(
+                        "always-y += compat/syscall_no.h",
+                        "always-y += compat/syscall_no.h\nalways += compat/syscall_no.h"
+                    )
+                    with open(sn_mk, 'w', encoding='utf-8') as f:
+                        f.write(sn_content)
+                    print(f"[+] Added 4.19 Kbuild 'always' compatibility in {sn_mk}")
+
+        for pr_sub in ["tools/code_generation/preinit_runner/preinit_runner.mk", "kernel/tools/code_generation/preinit_runner/preinit_runner.mk"]:
+            pr_mk = os.path.join(ksu_root, pr_sub)
+            if os.path.exists(pr_mk):
+                with open(pr_mk, 'r', encoding='utf-8', errors='ignore') as f:
+                    pr_content = f.read()
+                if "-fintegrated-as" not in pr_content:
+                    pr_content = pr_content.replace(
+                        "KSU_RUNNER_CFLAGS := $(CLANG_FLAGS)",
+                        "KSU_RUNNER_CFLAGS := $(CLANG_FLAGS) -fintegrated-as"
+                    )
+                    with open(pr_mk, 'w', encoding='utf-8') as f:
+                        f.write(pr_content)
+                    print(f"[+] Added -fintegrated-as to {pr_mk}")
+
     print("[*] All SuSFS v2 and BakaSU fixes applied cleanly and safely!")
 
 if __name__ == "__main__":

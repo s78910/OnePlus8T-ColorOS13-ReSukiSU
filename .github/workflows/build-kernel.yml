@@ -96,6 +96,7 @@ jobs:
           ./scripts/config --file out/.config --disable CONFIG_DEBUG_INFO_BTF
           ./scripts/config --file out/.config --disable CONFIG_DEBUG_FS
           make O=out ARCH=arm64 olddefconfig
+          make O=out ARCH=arm64 headers_install INSTALL_HDR_PATH=$PWD/out/usr || true
 
           echo "=== Verified Kernel Configurations ==="
           grep -E "CONFIG_KSU|CONFIG_LOCALVERSION|CONFIG_MODULE_SIG|CONFIG_MODULE_FORCE_LOAD|CONFIG_DEBUG_FS" out/.config || true

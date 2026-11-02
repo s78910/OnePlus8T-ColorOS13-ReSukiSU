@@ -4,9 +4,12 @@ set -e
 cd $GITHUB_WORKSPACE/device_kernel
 
 echo "=========================================="
-echo "1. Injecting ReSukiSU driver..."
+echo "1. Injecting ReSukiSU driver (v35257 / 516d3e87)..."
 echo "=========================================="
 curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/main/kernel/setup.sh" | bash -s main
+if [ -d KernelSU/.git ]; then
+    (cd KernelSU && git checkout 516d3e87fbc986ccefdde2c2765f1700612441a9 && echo "[+] Pinned BakaSU commit: $(git rev-parse --short=8 HEAD), count: $(git rev-list --count HEAD)")
+fi
 find KernelSU drivers/kernelsu -name "*hook_check.mk" -exec sh -c 'echo "# bypassed" > "$1"' _ {} \; 2>/dev/null || true
 
 echo "=========================================="
@@ -15,17 +18,10 @@ echo "=========================================="
 python3 $GITHUB_WORKSPACE/apply_susfs_fixes.py $GITHUB_WORKSPACE/device_kernel $GITHUB_WORKSPACE/zee295_susfs
 
 echo "=========================================="
-echo "2b. Eliminating -dirty from ReSukiSU/BakaSU Driver Version..."
+echo "2b. Eliminating -dirty from ReSukiSU/BakaSU Driver Version (preserving exact 35257 commit count & SHA)..."
 echo "=========================================="
 find KernelSU drivers/kernelsu -name "Kbuild" -exec sed -i 's/KSU_COMMIT_SHA)-dirty/KSU_COMMIT_SHA)/g' {} + 2>/dev/null || true
 find KernelSU drivers/kernelsu -name "Kbuild" -exec sed -i 's/-dirty//g' {} + 2>/dev/null || true
-
-if [ -d KernelSU/.git ]; then
-    (cd KernelSU && git config user.email "ci@local" && git config user.name "CI" && git add -A && git commit -m "clean") || true
-fi
-if [ -d drivers/kernelsu/.git ]; then
-    (cd drivers/kernelsu && git config user.email "ci@local" && git config user.name "CI" && git add -A && git commit -m "clean") || true
-fi
 
 echo "=========================================="
 echo "2c. Replacing Python 2 gcc-wrapper.py with Python 3 passthrough..."
